@@ -1,0 +1,18 @@
+{% extends 'emails/base.html' %}
+
+{% block content %}
+    <h2>Reactiva tu cuenta en Studyspace</h2>
+
+    <p>
+        Recibimos una solicitud para <strong>reactivar tu cuenta en Studyspace</strong>.
+        Para continuar, ingresa el siguiente código en la aplicación:
+    </p>
+    
+    <div class="code">{{ code }}</div>
+    
+    <p>Este código expira en <strong>15 minutos</strong>.</p>
+{% endblock %}
+
+{% block footer %}
+    Si no solicitaste este código, ignora este correo.
+{% endblock %}

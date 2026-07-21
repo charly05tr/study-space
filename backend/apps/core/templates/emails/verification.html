@@ -1,0 +1,15 @@
+{% extends 'emails/base.html' %}
+
+{% block content %}
+    <h2>Bienvenido a Studyspace</h2>
+
+    <p>Gracias por registrarte. Usa el siguiente código para verificar tu cuenta en la aplicación:</p>
+    
+    <div class="code">{{ code }}</div>
+    
+    <p>Este código expira en <strong>15 minutos</strong>.</p>
+{% endblock %}
+
+{% block footer %}
+    Si no te has registrado, ignora este correo.
+{% endblock %}

@@ -1,0 +1,77 @@
+services:
+  web:
+    build: .
+    container_name: studyspace
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    restart: always
+    ports: 
+      - 8000:8000
+    volumes:
+      - .:/app #solo para desarrollo
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: 
+      - .env
+  db:
+    image: postgis/postgis:15-3.3-alpine
+    container_name: studyspace_db
+    volumes:
+      - studyspace_db:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: studyspace_redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - studyspace_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery:
+    build: .
+    container_name: studyspace_celery
+    command: celery -A config worker -l info
+    restart: always
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - db
+    env_file:
+      - .env
+
+  celery_beat:
+    build: .
+    container_name: studyspace_celery_beat
+    command: celery -A config beat -l info 
+    restart: always
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - db
+    env_file:
+      - .env
+volumes:
+  studyspace_db:
+  studyspace_redis:

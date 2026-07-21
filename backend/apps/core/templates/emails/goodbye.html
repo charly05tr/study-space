@@ -1,0 +1,16 @@
+{% extends 'emails/base.html' %}
+
+{% block content %}
+    <p>Tu solicitud de baja ha sido procesada y <strong>tu cuenta se encuentra actualmente desactivada.</strong></p>
+
+    <p>Conservaremos tus studyspaces y notes durante los próximos <strong>30 días</strong> como periodo de gracia. Si cambias de opinión o fue un error, simplemente registrate con el mismo correo antes de esa fecha para reactivar todo instantáneamente.</p>
+
+    <p>Pasado este periodo, <strong>todos tus datos serán eliminados permanentemente</strong> de nuestros sistemas y serán irrecuperables.</p>
+
+    <p>Esperamos que nuestros caminos se vuelvan a cruzar.</p>
+{% endblock %}
+
+{% block footer %}
+    Tu cuenta está programada para eliminación definitiva en 30 días.<br>
+    Si no reactivas tu cuenta, esta será nuestra última comunicación.
+{% endblock %}

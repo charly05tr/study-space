@@ -1,0 +1,25 @@
+{% extends 'emails/base.html' %}
+{% block content %}
+<p>Te damos la bienvenida a <strong>Studyspace</strong>.</p>
+<p>
+Tu cuenta ha sido creada y verificada exitosamente. Desde ahora tienes acceso a
+<strong>un espacio de estudio diseñado para llevarte de la adquisición al dominio</strong>,
+automatizando las técnicas que realmente consolidan el aprendizaje.
+</p>
+<p>A partir de este momento, podrás:</p>
+<ul class="features">
+<li> <strong>Capturar mejor (Método Cornell):</strong> convierte cualquier clase o lectura en notas claras, con preguntas clave y un resumen útil.</li>
+<li> <strong>Conectar ideas (Mapa 3D / grafo de conocimiento):</strong> organiza conceptos en una red visual y define relaciones para ver el <em>big picture</em>.</li>
+<li> <strong>Comprobar comprensión (Técnica Feynman):</strong> explica con tus propias palabras y detecta lagunas antes de seguir avanzando.</li>
+<li> <strong>Recordar a largo plazo (Active Recall + SRS):</strong> practica recuperación activa y repasa con repetición espaciada para vencer la curva del olvido.</li>
+<li> <strong>Aplicar y dominar (Interleaving):</strong> mezcla tipos de ejercicios para aprender a identificar problemas y elegir la herramienta correcta.</li>
+</ul>
+<p>
+Ya puedes ingresar a la aplicación y crear tu primer <strong>Studyspace</strong> para comenzar.
+</p>
+{% endblock %}
+{% block footer %}
+Este es un correo informativo de confirmación de registro.
+
+&copy; {% now "Y" %} Studyspace App.
+{% endblock %}

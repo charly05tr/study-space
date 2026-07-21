@@ -1,0 +1,19 @@
+{% extends 'emails/base.html' %}
+
+{% block preview %}
+    <p>
+        {{ preview }}
+    </p>
+{% endblock %}
+
+{% block content %}
+    <p>
+        {{ message|linebreaksbr }}
+    </p>
+{% endblock %}
+
+{% block footer %}
+    Este es un correo informativo generado automáticamente.<br>
+    Si no reconoces este mensaje, puedes ignorarlo con seguridad.<br><br>
+    &copy; {% now "Y" %} Studyspace App.
+{% endblock %}

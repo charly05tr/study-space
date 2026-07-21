@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mecani API Gateway</title>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-light: #64748b;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            color: var(--text-main);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+            text-align: center;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            background-color: #d1fae5;
+            color: #065f46;
+            padding: 4px 12px;
+            border-radius: 99px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success);
+            border-radius: 50%;
+            margin-right: 6px;
+            box-shadow: 0 0 0 2px #d1fae5;
+        }
+
+        h1 {
+            color: var(--text-main);
+            margin: 0 0 10px 0;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        p.subtitle {
+            color: var(--text-light);
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .grid-links {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            text-align: left;
+        }
+
+        .card-link {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            text-decoration: none;
+            color: var(--text-main);
+            transition: all 0.2s ease;
+            background: white;
+        }
+
+        .card-link:hover {
+            border-color: var(--primary);
+            background-color: #eff6ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .card-link i {
+            font-size: 1.5rem;
+            margin-right: 15px;
+            color: var(--primary);
+        }
+
+        .link-info h3 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .link-info span {
+            font-size: 0.8rem;
+            color: var(--text-light);
+        }
+
+        .endpoints-list {
+            margin-top: 2rem;
+            text-align: left;
+            background: #f1f5f9;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .endpoints-list h4 {
+            margin: 0 0 10px 0;
+            color: var(--secondary);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .endpoint-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #e2e8f0;
+            font-family: monospace;
+            color: var(--primary-dark);
+        }
+        
+        .endpoint-item:last-child { border-bottom: none; }
+
+        .method {
+            font-weight: bold;
+            color: var(--secondary);
+            margin-right: 10px;
+        }
+
+        footer {
+            margin-top: 2rem;
+            font-size: 0.75rem;
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="status-badge">
+            <span class="status-dot"></span> Servidor Status: OK
+        </div>
+        
+        <h1><i class="ri-roadster-fill"></i> Mecani API</h1>
+        <p class="subtitle">Bienvenido al backend del servidor. Selecciona una herramienta para comenzar.</p>
+
+        <div class="grid-links">
+            <a href="/admin/" class="card-link">
+                <i class="ri-admin-line"></i>
+                <div class="link-info">
+                    <h3>Panel de Administración</h3>
+                    <span>Gestión de base de datos y usuarios</span>
+                </div>
+            </a>
+
+            <a href="/api/" class="card-link">
+                <i class="ri-server-line"></i>
+                <div class="link-info">
+                    <h3>API Root</h3>
+                    <span>Explorador de endpoints (DRF)</span>
+                </div>
+            </a>
+
+            <a href="api/schema/swagger-ui" class="card-link">
+                <i class="ri-book-read-line"></i>
+                <div class="link-info">
+                    <h3>API Documentation</h3>
+                    <span>Referencia técnica y pruebas de rutas con Swagger UI</span>
+                </div>
+            </a>
+            <a href="/silk/" class="card-link">
+                <i class="ri-pulse-line"></i>
+                <div class="link-info">
+                    <h3>Silk Monitor</h3>
+                    <span>Perfilado y monitoreo de rendimiento</span>
+                </div>
+            </a>
+        </div>
+
+        <div class="endpoints-list">
+            <h4>Endpoints de Autenticación (JWT)</h4>
+            <div class="endpoint-item">
+                <span><span class="method">POST</span> /api/auth/token/</span>
+            </div>
+            <div class="endpoint-item">
+                <span><span class="method">POST</span> /api/auth/refresh/</span>
+            </div>
+            <div class="endpoint-item">
+                <span><span class="method">POST</span> /api/auth/verify/</span>
+            </div>
+        </div>
+
+        <footer>
+            Mecani Backend v0.6.0 &bull; Powered by Django & Docker
+        </footer>
+    </div>
+</body>
+</html>

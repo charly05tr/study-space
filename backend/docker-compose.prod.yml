@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: studyspace_web
+    restart: always
+    # Reemplazamos WSGI por ASGI usando Uvicorn Workers
+    command: gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+
+    environment:
+      - TZ=America/Managua
+
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    expose:
+      - 8000
+    env_file:
+      - .env.prod
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  db:
+    image: postgis/postgis:15-3.3-alpine
+    container_name: studyspace_db
+    restart: always
+
+    environment:
+      - TZ=America/Managua
+
+    volumes:
+      - studyspace_db:/var/lib/postgresql/data/
+    env_file:
+      - .env.prod
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: studyspace_redis
+    restart: always
+    command: [ "redis-server", "--appendonly", "yes" ]
+    volumes:
+      - studyspace_redis:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery:
+    build: .
+    container_name: studyspace_celery
+    command: celery -A config worker -l info
+    restart: always
+    environment:
+      - TZ=America/Managua
+    volumes:
+      - media_volume:/app/media # Celery podría necesitar procesar imágenes/archivos
+    env_file:
+      - .env.prod
+    depends_on:
+      - redis
+      - db
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: studyspace_nginx
+    restart: always
+
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d # Tu configuración de Nginx
+      - static_volume:/app/staticfiles # Lee estáticos generados por Django
+      - media_volume:/app/media # Lee media
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - web
+
+    networks:
+      - default
+      - npm_net
+
+  certbot:
+    image: certbot/certbot
+    container_name: studyspace_certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    # Este comando revisa cada 12 horas si el certificado necesita renovarse
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  studyspace_db:
+  studyspace_redis:
+  static_volume:
+  media_volume:
+
+networks:
+  default:
+  vpn_net:
+    external: true
+    name: carlos_vpn_net
+  npm_net:
+    external: true
+    name: carlos_default

@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.py[cod]
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+# Firebase credentials
+firebase-credentials.json
+deploy_key
+deploy_key.pub
+.vscode
