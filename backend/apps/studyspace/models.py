@@ -99,4 +99,6 @@ class Reference(models.Model):
     reference_type = models.CharField(max_length=30, choices=ReferenceType.choices)
     authors = models.CharField(null=True, blank=True)
     publication_date = models.DateField(null=True, blank=True)
+    
+    studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='references')
     created_at = models.DateTimeField(auto_now_add=True)

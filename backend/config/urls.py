@@ -9,10 +9,11 @@ from rest_framework_simplejwt.views import (
 from rest_framework_nested.routers import NestedDefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from apps.users.api.views import UserViewSet
+from apps.studyspace.api.views import StudyspaceViewSet
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet, basename='users')
-
+router.register(r'studyspace', StudyspaceViewSet, basename='studyspace')
 
 urlpatterns = [
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
