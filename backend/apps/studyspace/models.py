@@ -13,6 +13,8 @@ class Studyspace(models.Model):
     # Relations
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='studyspaces')
     
+    tags = models.ManyToManyField('tag', related_name="studyspaces", blank=True)
+    
     # Time
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -78,7 +80,23 @@ class Annotation(models.Model):
 class Tag(models.Model):
     name = models.CharField()
     
-
-class studyspaces_tags(models.Model):
-    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='studyspaces_tags')
-    studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='studyspaces_tags')
+    
+class Reference(models.Model):
+    class ReferenceType(models.TextChoices):
+        BOOK = "BOOK", "Book"
+        BOOK_CHAPTER = "BOOK_CHAPTER", "Book Chapter"
+        JOURNAL_ARTICLE = "JOURNAL_ARTICLE", "Journal Article"
+        CONFERENCE_PAPER = "CONFERENCE_PAPER", "Conference Paper"
+        THESIS = "THESIS", "Thesis"
+        WEBSITE = "WEBSITE", "Website"
+        VIDEO = "VIDEO", "Video"
+        PODCAST = "PODCAST", "Podcast"
+        DOCUMENTATION = "DOCUMENTATION", "Documentation"
+        OTHER = "OTHER", "Other"
+        
+    url = models.URLField()
+    title = models.CharField()
+    reference_type = models.CharField(max_length=30, choices=ReferenceType.choices)
+    authors = models.CharField(null=True, blank=True)
+    publication_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
