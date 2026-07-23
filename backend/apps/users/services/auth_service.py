@@ -23,7 +23,6 @@ class AuthService:
                 'username':google_data['email'],
                 'google_id':google_data['google_id'],
                 'avatar_url': google_data['avatar'],
-                'role': role, 
                 'is_verified': True
             }
         )

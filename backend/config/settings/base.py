@@ -2,9 +2,6 @@ from pathlib import Path
 from datetime import timedelta
 from decouple import config
 import cloudinary
-import cloudinary.uploader
-import cloudinary.api
-import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -148,9 +145,5 @@ cloudinary.config(
   api_secret=config('CLOUDINARY_API_SECRET'),
 )
 
-
-#Dependency injection
-IMAGE_PROVIDER = 'apps.core.adapters.cloudinary_adapter.CloudinaryAdapter'
-EMAIL_PROVIDER = 'apps.core.adapters.celery_email_adapter.CeleryEmailAdapter'
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

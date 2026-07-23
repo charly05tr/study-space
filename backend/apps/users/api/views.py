@@ -18,7 +18,6 @@ from apps.users.api.serializers import (
 from apps.users.services.user_service import UserService
 from apps.users.services.auth_service import AuthService
 from apps.users.models import User 
-from apps.users.api.serializers import UserWatchlistSerializer
 
 class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserOutputSerializer

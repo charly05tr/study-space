@@ -2,7 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import authenticate
 from rest_framework.exceptions import AuthenticationFailed  
 from rest_framework import serializers
-from apps.users.models import User, UserImage,FCMDevice
+from apps.users.models import User, UserImage
 
 
 class EmailLoginSerializer(serializers.Serializer):
@@ -28,16 +28,13 @@ class EmailRegisterSerializer(serializers.ModelSerializer):
         validators=[validate_password],
         style={'input_type': 'password'}
     )
-    role = serializers.ChoiceField(
-        choices=[('DRIVER', 'Conductor'), ('MECHANIC', 'Mecánico')]
-    )
     email = serializers.EmailField(required=True)
 
     phone = serializers.CharField(min_length=8, max_length=8, required=False)
 
     class Meta:
         model = User
-        fields = ['email', 'password', 'first_name', 'last_name', 'role', 'phone'] 
+        fields = ['email', 'password', 'first_name', 'last_name', 'phone'] 
 
     def validate_email(self, value):
         user = User.objects.filter(email=value).first()
@@ -62,7 +59,7 @@ class UserOutputSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'role', 'avatar_url', 'profile_img', 'is_verified', 'is_active', 'phone']
+        fields = ['id', 'email', 'first_name', 'last_name','avatar_url', 'profile_img', 'is_verified', 'is_active', 'phone']
 
     def get_profile_img(self, user):
         image = user.user_images.last() 
