@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'apps.core',
     'apps.users',
+    'apps.studyspace',
     'silk',
     'anymail',
     'drf_spectacular',
