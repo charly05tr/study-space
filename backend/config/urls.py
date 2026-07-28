@@ -10,6 +10,7 @@ from rest_framework_nested.routers import NestedDefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from apps.users.api.views import UserViewSet
 from apps.studyspace.api.views import StudyspaceViewSet
+from apps.studyspace.views import pdf_to_html_view, source_html_view
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet, basename='users')
@@ -18,6 +19,9 @@ router.register(r'studyspace', StudyspaceViewSet, basename='studyspace')
 urlpatterns = [
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
     path('admin/', admin.site.urls),
+    #dev tools
+    path('dev/pdf-to-html/', pdf_to_html_view, name='pdf_to_html'),
+    path('dev/sources/<int:source_id>/html/', source_html_view, name='source_html'),
     #api
     path('api/', include(router.urls)),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

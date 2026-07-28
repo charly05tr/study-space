@@ -52,12 +52,26 @@ class Source(models.Model):
     title = models.CharField(max_length=255)
     source_type = models.CharField(max_length=10, choices=SourceType.choices)
     file = models.FileField(upload_to='sources/')
-    study_space = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='sources') 
-    
-    # Para el seguimiento de progreso (Ej: en qué página o segundo se quedó)
-    last_position = models.FloatField(default=0) 
+    study_space = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='sources')
+
+    # El HTML que lee el usuario. Se genera una sola vez: convertir un libro
+    # entero es caro y el resultado es determinista para una misma versión del
+    # conversor.
+    converted_file = models.FileField(upload_to='sources/converted/', blank=True)
+
+    # Con qué versión del conversor se generó. Sin esto, mejorar el conversor
+    # no tendría efecto sobre las fuentes ya convertidas.
+    converted_with = models.PositiveSmallIntegerField(default=0)
+
+
+    # El progreso se mide distinto según el medio: un audio o un video se retoman
+    # en un segundo, un documento se retoma en un bloque del HTML convertido.
+    # Son unidades distintas, por eso son dos campos y no uno compartido.
+    last_position = models.FloatField(default=0)
+    last_anchor = models.CharField(max_length=64, blank=True)
+
     updated_at = models.DateTimeField(auto_now=True)
-    
+
 
 class Annotation(models.Model):
     class AnnotationType(models.TextChoices):
@@ -68,14 +82,32 @@ class Annotation(models.Model):
     annotation_type = models.CharField(max_length=20, choices=AnnotationType.choices)
     
     # El contenido extraído o escrito
-    content = models.TextField() 
-    
-    # Metadatos espaciales (Usando JSONField para guardar las coordenadas y la página)
-    # Ej: {"page": 14, "rects": [{"x": 10, "y": 20, "w": 100, "h": 15}]}
-    position_data = models.JSONField() 
-    
+    content = models.TextField()
+
+    # Ubicación dentro del HTML convertido. Las coordenadas del PDF no sirven
+    # acá: el HTML se reajusta al ancho de pantalla y al cuerpo de letra, así que
+    # un x/y fijo deja de apuntar al mismo texto. El ancla se deriva del
+    # contenido del bloque, por lo que sobrevive a reconvertir la fuente.
+    # Ver BlockAnchors en apps/studyspace/services/pdf_service.py
+    anchor = models.CharField(max_length=64)
+
+    # Página del PDF original. Se guarda desnormalizada para poder mostrar
+    # "página 14" sin volver a convertir el documento.
+    page = models.PositiveIntegerField()
+
+    # Una selección puede cruzar varios bloques, así que el rango es una lista.
+    # Ej: [{"anchor": "b-4cda0adf76", "start": 12, "end": 88}]
+    # 'anchor' de arriba repite el del primer rango, para poder filtrar por
+    # bloque sin abrir el JSON al renderizar una página.
+    ranges = models.JSONField(default=list)
+
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['source', 'anchor']),
+        ]
+
     
 class Tag(models.Model):
     name = models.CharField()
