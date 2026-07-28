@@ -88,7 +88,8 @@ axiosInstance.interceptors.response.use(
       try {
         // Usamos 'axios.post' nativo y no 'axiosInstance' 
         // para evitar que esta petición pase por los interceptores y cause un bucle
-        const refreshResponse = await axios.post(`${BASE_URL}/users/token/refresh/`, {
+        // La ruta real es /api/auth/refresh/ (config/urls.py), no /api/users/token/refresh/
+        const refreshResponse = await axios.post(`${BASE_URL}/auth/refresh/`, {
           refresh: refreshToken,
         });
 

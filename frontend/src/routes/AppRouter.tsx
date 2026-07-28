@@ -9,14 +9,19 @@ import { ReaderLayout } from '../layouts/ReaderLayout';
 // Importamos los Guardianes
 import { ProtectedRoute, PublicRoute } from './Guards';
 
-const DummyPage = ({ title }: { title: string }) => <h1>{title}</h1>;
+import { DummyPage } from './DummyPage';
+import { LoginPage } from '../features/auth/pages/LoginPage';
+import { RegisterPage } from '../features/auth/pages/RegisterPage';
+import { ActivateAccountPage } from '../features/auth/pages/ActivateAccountPage';
+import { StudyspacesPage } from '../features/studyspaces/pages/StudyspacesPage';
+import { CreateStudyspacePage } from '../features/studyspaces/pages/CreateStudyspacePage';
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <Navigate to="/studyspaces" replace />,
   },
-  
+
   // ==========================================
   // RUTAS PÚBLICAS (Envueltas por PublicRoute y AuthLayout)
   // ==========================================
@@ -26,8 +31,9 @@ export const router = createBrowserRouter([
       {
         element: <AuthLayout />,
         children: [
-          { path: '/login', element: <DummyPage title="Login page" /> },
-          { path: '/register', element: <DummyPage title="Login Page" /> },
+          { path: '/login', element: <LoginPage /> },
+          { path: '/register', element: <RegisterPage /> },
+          { path: '/activate', element: <ActivateAccountPage /> },
           // { path: '/recuperar-password', element: <ForgotPasswordPage /> },
         ],
       },
@@ -43,14 +49,15 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { path: '/studyspaces', element: <DummyPage title="My Studyspaces" /> },
+          { path: '/studyspaces', element: <StudyspacesPage /> },
+          { path: '/studyspaces/create', element: <CreateStudyspacePage /> },
           { path: '/profile', element: <DummyPage title="Profile" /> },
         ],
       },
       {
         element: <ReaderLayout />,
         children: [
-          { path: '/studyspace/:studyspaceId', element: <DummyPage title="studyspace" /> }, 
+          { path: '/studyspace/:studyspaceId', element: <DummyPage title="studyspace" /> },
         ],
       },
     ],
