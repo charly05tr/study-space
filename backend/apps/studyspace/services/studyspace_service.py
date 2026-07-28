@@ -49,3 +49,25 @@ class StudyspaceService:
         
         return note
     
+    def update_note(self, data: dict, note: Note, new_images: list[UploadedFile], images_to_delete_ids: list[int]) -> Studyspace:
+        # Actualizar datos
+        for key, value in data.items():
+            setattr(note, key, value) 
+        note.save()
+        
+        # Subir imagenes
+        for image in new_images:
+            url = self.image.upload(image=image)
+            NoteImage.objects.create(url=url, note=note, alt=f'Image of note #{note.id}')
+        
+        # Eliminar imagenes
+        for image_id in images_to_delete_ids:
+            note_image = NoteImage.objects.filter(id=image_id).first()
+            self.image.destroy(note_image.url)
+            note_image.delete()
+            
+        return note
+    
+    def get_user_notes(self, user):
+        return Note.objects.filter(user=user)
+    

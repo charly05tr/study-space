@@ -60,7 +60,18 @@ class StudyspaceDetailSerializer(serializers.ModelSerializer):
                   'notes', 'sources', 'references']
         
         
-class NoteCreateUpdateSerializer(serializers.ModelSerializer):
+class NoteCreateSerializer(serializers.ModelSerializer):
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        required=False
+    )
+
+    class Meta:
+        model = Note
+        fields = ['title', 'content', 'images']
+        
+            
+class NoteUpdateSerializer(serializers.ModelSerializer):
     new_images = serializers.ListField(
         child=serializers.ImageField(),
         required=False
@@ -74,3 +85,18 @@ class NoteCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Note
         fields = ['title', 'content', 'new_images', 'images_to_delete_ids']
+        
+
+class NoteImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NoteImage
+        fields = ['id', 'alt', 'url']
+        
+        
+class NoteDetailSerializer(serializers.ModelSerializer):
+    images = NoteImageSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Note
+        fields = ['id', 'title', 'content', 'studyspace', 'created_at', 'updated_at', 'images']
+        
