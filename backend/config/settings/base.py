@@ -3,7 +3,10 @@ from datetime import timedelta
 from decouple import config
 import cloudinary
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# settings/base.py -> settings/ -> config/ -> raiz del proyecto.
+# Con un .parent menos, MEDIA_ROOT apuntaba a config/media/ mientras nginx
+# sirve /media/ desde la raiz, y todo archivo subido daba 404.
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 INSTALLED_APPS = [
     'daphne',

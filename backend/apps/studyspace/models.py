@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from apps.users.models import User
 
 
@@ -71,6 +73,18 @@ class Source(models.Model):
     last_anchor = models.CharField(max_length=64, blank=True)
 
     updated_at = models.DateTimeField(auto_now=True)
+
+
+@receiver(post_delete, sender=Source)
+def borrar_archivos_de_source(sender, instance, **kwargs):
+    """Django no borra los archivos al borrar la fila, hay que hacerlo a mano.
+
+    Se usa post_delete y no Source.delete() porque el borrado en cascada, como
+    el de un Studyspace, no pasa por el método del modelo pero sí emite la señal.
+    """
+    for campo in (instance.file, instance.converted_file):
+        if campo:
+            campo.delete(save=False)
 
 
 class Annotation(models.Model):

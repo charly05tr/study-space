@@ -11,22 +11,43 @@
             color: #1e293b;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
             margin: 0;
+            padding: 3rem 1rem;
         }
 
-        form {
+        .panel {
             background: #ffffff;
             padding: 2.5rem;
             border-radius: 16px;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
             width: 100%;
-            max-width: 420px;
+            max-width: 480px;
         }
 
         h1 { font-size: 1.4rem; margin: 0 0 0.5rem 0; }
-        p { color: #64748b; margin: 0 0 1.5rem 0; font-size: 0.9rem; }
+        h2 { font-size: 0.95rem; margin: 2.5rem 0 0.75rem 0; }
+        p.hint { color: #64748b; margin: 0 0 1.5rem 0; font-size: 0.9rem; }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 0.6rem 0.7rem;
+            margin-bottom: 1.25rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+
         input[type="file"] { width: 100%; margin-bottom: 1.5rem; }
 
         button {
@@ -42,15 +63,60 @@
         }
 
         button:hover { background-color: #1e40af; }
+
+        ul { list-style: none; padding: 0; margin: 0; }
+
+        li {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+        }
+
+        li:last-child { border-bottom: none; }
+        li a { color: #2563eb; text-decoration: none; }
+        li a:hover { text-decoration: underline; }
+        li .space { color: #64748b; font-size: 0.8rem; }
+        .empty { color: #94a3b8; font-size: 0.9rem; margin: 0; }
     </style>
 </head>
 <body>
-    <form method="post" enctype="multipart/form-data">
-        {% csrf_token %}
-        <h1>PDF to HTML</h1>
-        <p>Pick a PDF file to convert it into a paginated HTML document.</p>
-        <input type="file" name="pdf" accept="application/pdf" required>
-        <button type="submit">Convert</button>
-    </form>
+    <div class="panel">
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <h1>PDF to HTML</h1>
+            <p class="hint">The converted document is stored and served from then on.</p>
+
+            <label for="studyspace">Studyspace</label>
+            <input type="text" id="studyspace" name="studyspace" list="known-studyspaces"
+                   placeholder="Name a new one or pick an existing one" required>
+            <datalist id="known-studyspaces">
+                {% for studyspace in studyspaces %}
+                    <option value="{{ studyspace.title }}"></option>
+                {% endfor %}
+            </datalist>
+
+            <label for="pdf">PDF file</label>
+            <input type="file" id="pdf" name="pdf" accept="application/pdf" required>
+
+            <button type="submit">Convert and store</button>
+        </form>
+
+        <h2>Stored sources</h2>
+        {% if sources %}
+            <ul>
+                {% for source in sources %}
+                    <li>
+                        <a href="{% url 'source_html' source.pk %}">{{ source.title }}</a>
+                        <span class="space">{{ source.study_space.title }}</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="empty">Nothing converted yet.</p>
+        {% endif %}
+    </div>
 </body>
 </html>
