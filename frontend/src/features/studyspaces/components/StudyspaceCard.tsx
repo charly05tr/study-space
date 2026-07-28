@@ -1,12 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Badge, Card, CardBody, CardTitle } from '../../../components/ui';
+import { formatDate } from '../../../lib/formatDate';
 import type { StudyspaceListItem } from '../types';
-
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-});
 
 interface StudyspaceCardProps {
   studyspace: StudyspaceListItem;
@@ -29,9 +24,7 @@ export const StudyspaceCard = ({ studyspace }: StudyspaceCardProps) => (
         )}
 
         <p className="mt-auto font-heading text-xs uppercase tracking-[0.14em] text-muted">
-          <time dateTime={studyspace.created_at}>
-            {dateFormatter.format(new Date(studyspace.created_at))}
-          </time>
+          <time dateTime={studyspace.created_at}>{formatDate(studyspace.created_at)}</time>
         </p>
       </CardBody>
     </Card>

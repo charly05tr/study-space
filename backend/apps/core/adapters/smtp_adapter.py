@@ -18,7 +18,7 @@ class SMTPAdapter(IEmailService):
         send_mail(
             subject,
             plain_message,
-            'Studyspace App <noreply@studysapce.cetorres.dev>', 
+            'Studyspace App <noreply@cetorres.dev>', 
             [user.email],
             html_message=html_message,
         )
@@ -37,7 +37,7 @@ class SMTPAdapter(IEmailService):
         send_mail(
             subject,
             plain_message,
-            'Studyspace App <noreply@studysapce.cetorres.dev>', 
+            'Studyspace App <noreply@cetorres.dev>', 
             [user.email],
             html_message=html_message,
             fail_silently=True
@@ -56,7 +56,7 @@ class SMTPAdapter(IEmailService):
         send_mail(
             subject,
             plain_message,
-            'Studyspace App <noreply@studysapce.cetorres.dev>', 
+            'Studyspace App <noreply@cetorres.dev>', 
             [user.email],
             html_message=html_message,
         )
@@ -73,7 +73,7 @@ class SMTPAdapter(IEmailService):
         send_mail(
             subject,
             plain_message,
-            'Studyspace App <noreply@studysapce.cetorres.dev>', 
+            'Studyspace App <noreply@cetorres.dev>', 
             [user.email],
             html_message=html_message,
         )
@@ -91,7 +91,7 @@ class SMTPAdapter(IEmailService):
         send_mail(
             subject,
             plain_message,
-            'Studyspace App <noreply@studysapce.cetorres.dev>', 
+            'Studyspace App <noreply@cetorres.dev>', 
             [user.email],
             html_message=html_message,
         )
@@ -107,7 +107,7 @@ class SMTPAdapter(IEmailService):
         send_mail(
             subject,
             plain_message,
-            'Studyspace App <noreply@studysapce.cetorres.dev>', 
+            'Studyspace App <noreply@cetorres.dev>', 
             [user.email],
             html_message=html_message,
         )

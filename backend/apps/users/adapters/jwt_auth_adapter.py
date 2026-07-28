@@ -4,8 +4,6 @@ from ..interfaces import ITokenService
 class JWTAuthAdapter(ITokenService):
     def get_tokens_for_user(self, user):
         refresh = RefreshToken.for_user(user)
-        #Agregamos el role al token
-        refresh['role'] = user.role
 
         return {
             'refresh': str(refresh),

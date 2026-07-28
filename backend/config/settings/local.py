@@ -19,6 +19,15 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+# CORS: el front de Vite corre en otro origen (localhost:5173) que el API
+# (localhost:8000). Sin esto CorsMiddleware no agrega Access-Control-Allow-Origin,
+# el navegador corta en el preflight OPTIONS y el POST nunca se envia.
+# Regex en vez de lista fija porque Vite salta a 5174, 5175... si el puerto
+# esta ocupado. Solo para desarrollo: production.py usa CORS_ALLOWED_ORIGINS.
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://(localhost|127\.0\.0\.1):\d+$",
+]
+
 
 CACHES = {
     "default": {
@@ -28,15 +37,6 @@ CACHES = {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }
     }
-}
-
-from celery.schedules import crontab
-
-CELERY_BEAT_SCHEDULE = {
-    'check-no-shows-every-hour': {
-        'task': 'apps.orders.tasks.process_no_shows_task', 
-        'schedule': crontab(minute=0), 
-    },
 }
 
 CELERY_BROKER_URL = "redis://redis:6379/1"
@@ -50,4 +50,8 @@ CHANNEL_LAYERS = {
             "hosts": [("redis", 6379)],
         },
     },
+}
+
+ANYMAIL = {
+    "RESEND_API_KEY": config("RESEND_API_KEY"),
 }

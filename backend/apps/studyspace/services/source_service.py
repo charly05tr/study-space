@@ -9,7 +9,7 @@ class SourceService:
     """Entrega el HTML de lectura de una fuente, convirtiéndola cuando hace falta."""
 
     def get_user_sources(self, user: User) -> list[Source]:
-        return Source.objects.filter(study_space__user=user)      
+        return Source.objects.filter(study_space__user=user)
     
     def get_reader_html(self, source: Source) -> str:
         if self._is_current(source):

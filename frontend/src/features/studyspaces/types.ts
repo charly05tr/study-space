@@ -12,10 +12,38 @@ export interface NoteMinimal {
   title: string;
 }
 
+/** Source.SourceType choices — the stored value, not the label. */
+export type SourceType = 'pdf' | 'mp4' | 'mp3';
+
 export interface SourceMinimal {
   id: number;
   title: string;
-  source_type: string;
+  source_type: SourceType;
+}
+
+/** Reference.ReferenceType choices. */
+export type ReferenceType =
+  | 'BOOK'
+  | 'BOOK_CHAPTER'
+  | 'JOURNAL_ARTICLE'
+  | 'CONFERENCE_PAPER'
+  | 'THESIS'
+  | 'WEBSITE'
+  | 'VIDEO'
+  | 'PODCAST'
+  | 'DOCUMENTATION'
+  | 'OTHER';
+
+/** ReferenceSerializer uses fields = "__all__". */
+export interface Reference {
+  id: number;
+  url: string;
+  title: string;
+  reference_type: ReferenceType;
+  authors: string | null;
+  publication_date: string | null;
+  studyspace: number;
+  created_at: string;
 }
 
 /** Shape of StudyspaceDetailSerializer, returned by POST /studyspaces/. */
@@ -29,7 +57,7 @@ export interface StudyspaceDetail {
   tags: string[];
   notes: NoteMinimal[];
   sources: SourceMinimal[];
-  references: unknown[];
+  references: Reference[];
 }
 
 /**

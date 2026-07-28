@@ -15,9 +15,10 @@ from apps.users.api.serializers import (
     ChangePasswordSerializer,
     ActivationSerializer,
 )
+from apps.users.api.dependencies import get_email_service, get_image_service
 from apps.users.services.user_service import UserService
 from apps.users.services.auth_service import AuthService
-from apps.users.models import User 
+from apps.users.models import User
 
 class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserOutputSerializer
@@ -170,10 +171,12 @@ class UserViewSet(viewsets.ModelViewSet):
         )        
         
         result = auth_service.resend_verification_code(serializer.validated_data['email'])
-        
+
+        # user viene en None cuando la respuesta es neutra (correo inexistente
+        # o cuenta ya activa); no hay nada que serializar.
         return Response({
             "message": result['message'],
-            "user": UserOutputSerializer(result['user']).data
+            "user": UserOutputSerializer(result['user']).data if result['user'] else None
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'],  permission_classes=[AllowAny])

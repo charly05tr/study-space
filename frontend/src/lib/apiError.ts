@@ -45,6 +45,10 @@ export const getApiErrorMessage = (
   );
 };
 
+/** HTTP status, or null when the request never got a response. */
+export const getApiErrorStatus = (error: unknown): number | null =>
+  error instanceof AxiosError ? (error.response?.status ?? null) : null;
+
 /** Per-field messages, ready to hand to <Input error={...} />. */
 export const getFieldErrors = (error: unknown): Record<string, string> => {
   if (!(error instanceof AxiosError)) return {};

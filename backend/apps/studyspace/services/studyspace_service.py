@@ -34,5 +34,5 @@ class StudyspaceService:
         return studyspace
         
     def get_user_studyspaces(self, user) -> list[Studyspace]:
-        return Studyspace.objects.filter(user=user)
+        return Studyspace.objects.filter(user=user).order_by('-created_at')
     

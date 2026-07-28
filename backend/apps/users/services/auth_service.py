@@ -91,11 +91,23 @@ class AuthService:
         
     def resend_verification_code(self, email):
         user = User.objects.filter(email=email).first()
-        
+
+        # Respuesta neutra: no revelamos si el correo existe ni si ya esta
+        # activo. Antes, un email desconocido llegaba a create_for_user(None)
+        # y reventaba con 500.
+        neutral = {
+            'user': None,
+            'tokens': None,
+            'message': 'Si el correo existe y esta pendiente, se ha enviado un nuevo codigo.'
+        }
+
+        if not user or user.is_active:
+            return neutral
+
         code_obj = VerificationCode.create_for_user(user)
-        
+
         self.email.send_verification_code(user, code_obj)
-        
+
         return {
             'user': user,
             'tokens': None,
@@ -115,16 +127,6 @@ class AuthService:
 
     def activate_account(self, code, email):
         user = User.objects.filter(email=email).first()
-
-        if "@test.com" in email:
-            user.is_active = True 
-            user.is_verified = True
-            user.save()
-            tokens = self.tokens.get_tokens_for_user(user)
-            return {
-                'user': user,
-                'tokens': tokens
-            }
 
         valid_code = (
             VerificationCode.objects

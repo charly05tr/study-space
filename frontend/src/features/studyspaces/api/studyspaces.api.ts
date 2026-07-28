@@ -10,6 +10,11 @@ export const studyspacesApi = {
     return response.data;
   },
 
+  retrieve: async (id: number): Promise<StudyspaceDetail> => {
+    const response = await axios.get(`${BASE_URL}/${id}/`);
+    return response.data;
+  },
+
   create: async (data: StudyspacePayload): Promise<StudyspaceDetail> => {
     const response = await axios.post(`${BASE_URL}/`, data);
     return response.data;

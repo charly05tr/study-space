@@ -3,6 +3,7 @@ from celery.utils.log import get_task_logger
 from django.contrib.auth import get_user_model
 from apps.core.adapters.smtp_adapter import SMTPAdapter
 from apps.users.models import VerificationCode
+
 logger = get_task_logger(__name__)
 User = get_user_model()
 
@@ -72,9 +73,9 @@ def task_send_goodbye(self, user_id):
     try:
         user = User.objects.get(pk=user_id)
 
-        smtp_adapter = SMTPAdapter() 
-        smtp_adapter.send_welcome(user=user)
-        
+        smtp_adapter = SMTPAdapter()
+        smtp_adapter.send_goodbye(user=user)
+
         logger.info(f"Email de despedida enviado a user_id: {user_id}")
     except User.DoesNotExist:
         logger.error(f"User {user_id} no encontrado")
@@ -92,15 +93,5 @@ def task_send(self, user_id, message, subject):
         logger.info(f"Email generico enviado a user_id: {user_id}")
     except User.DoesNotExist:
         logger.error(f"User {user_id} no encontrado")
-    except Exception as exc:
-        raise self.retry(exc=exc)
-
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def task_send_workshop_verification_request(self, workshop_name):
-    try:
-        smtp_adapter = SMTPAdapter() 
-        smtp_adapter.send_workshop_verification_request(workshop_name=workshop_name)
-        
-        logger.info(f"Email enviado a los admins")
     except Exception as exc:
         raise self.retry(exc=exc)

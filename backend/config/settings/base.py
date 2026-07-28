@@ -137,13 +137,13 @@ CHANNEL_LAYERS = {
 }
 
 #email configs
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
 EMAIL_HOST = config('EMAIL_HOST')
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "resend"
 EMAIL_HOST_PASSWORD = config('RESEND_API_KEY')
-DEFAULT_FROM_EMAIL = 'Studyspace App <noreply@studyspace.cetorres.dev>'
+DEFAULT_FROM_EMAIL = 'Studyspace App <noreply@cetorres.dev>'
 
 #cloudinary configs
 cloudinary.config(
@@ -153,4 +153,4 @@ cloudinary.config(
 )
 
 
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
