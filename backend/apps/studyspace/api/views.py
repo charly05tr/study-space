@@ -124,4 +124,5 @@ class NoteViewSet(viewsets.ModelViewSet):
         return Response(NoteDetailSerializer(note).data, status=status.HTTP_200_OK)
             
     
-            
+class SourceViewSet(viewsets.ModelViewsSet):
+    permission_classes = [IsAuthenticated]
