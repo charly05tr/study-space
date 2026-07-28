@@ -96,7 +96,18 @@ export const StudyspaceDetailPage = () => {
           <ul>
             {studyspace.sources.map((source) => (
               <DetailRow key={source.id}>
-                <span className="min-w-0 truncate text-ink">{source.title}</span>
+                {/* Only PDFs open: the reader renders converted HTML, and there
+                    is no player for mp3/mp4 yet. */}
+                {source.source_type === 'pdf' ? (
+                  <Link
+                    to={`/source/${source.id}`}
+                    className="min-w-0 truncate text-primary-ink underline underline-offset-4"
+                  >
+                    {source.title}
+                  </Link>
+                ) : (
+                  <span className="min-w-0 truncate text-ink">{source.title}</span>
+                )}
                 <Badge>{SOURCE_TYPE_LABEL[source.source_type] ?? source.source_type}</Badge>
               </DetailRow>
             ))}

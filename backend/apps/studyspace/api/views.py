@@ -161,17 +161,29 @@ class SourceViewSet(viewsets.ModelViewSet):
         source = get_object_or_404(sources, pk=pk)
         
         # 3. Manejamos los errores de conversión elegantemente
+        # get_reader_html devuelve el HTML ya guardado cuando fue generado con
+        # la version actual del conversor. Llamar a convert() siempre reconvertia
+        # el PDF entero en cada apertura, dejando sin uso el cache de
+        # converted_with. ?force=true fuerza la reconversion.
+        force = request.query_params.get('force', '').lower() in ('true', '1')
+
         try:
-            reader_html = self.service.convert(source=source)
+            if force:
+                reader_html = self.service.convert(source=source)
+            else:
+                reader_html = self.service.get_reader_html(source=source)
         except Exception as error:
             return Response(
-                {"detail": f"The PDF could not be converted: {error}"}, 
+                {"detail": f"The PDF could not be converted: {error}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         return Response({
             'title': source.title,
             'last_position': source.last_position,
+            # Un documento se retoma por ancla, no por posicion: sin esto el
+            # lector no puede volver al bloque donde quedo el usuario.
+            'last_anchor': source.last_anchor,
             'reader_html': reader_html
         }, status=status.HTTP_200_OK)
         

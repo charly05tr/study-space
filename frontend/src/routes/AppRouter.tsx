@@ -15,6 +15,8 @@ import { RegisterPage } from '../features/auth/pages/RegisterPage';
 import { ActivateAccountPage } from '../features/auth/pages/ActivateAccountPage';
 import { StudyspacesPage } from '../features/studyspaces/pages/StudyspacesPage';
 import { CreateStudyspacePage } from '../features/studyspaces/pages/CreateStudyspacePage';
+import { StudyspaceDetailPage } from '../features/studyspaces/pages/StudyspaceDetailPage';
+import { ReaderPage } from '../features/reader/pages/ReaderPage';
 
 export const router = createBrowserRouter([
   {
@@ -51,14 +53,15 @@ export const router = createBrowserRouter([
         children: [
           { path: '/studyspaces', element: <StudyspacesPage /> },
           { path: '/studyspaces/create', element: <CreateStudyspacePage /> },
+          // El detalle es un hub (sources, notes, references), no una vista de
+          // lectura: va en AppLayout, no en ReaderLayout.
+          { path: '/studyspace/:studyspaceId', element: <StudyspaceDetailPage /> },
           { path: '/profile', element: <DummyPage title="Profile" /> },
         ],
       },
       {
         element: <ReaderLayout />,
-        children: [
-          { path: '/studyspace/:studyspaceId', element: <DummyPage title="studyspace" /> },
-        ],
+        children: [{ path: '/source/:sourceId', element: <ReaderPage /> }],
       },
     ],
   },
