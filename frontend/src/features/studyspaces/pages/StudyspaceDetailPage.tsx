@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   Badge,
+  Button,
   Divider,
   EmptyState,
   ErrorState,
@@ -9,9 +11,11 @@ import {
 } from '../../../components/ui';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import { formatDate } from '../../../lib/formatDate';
+import { AddSourceForm } from '../../sources/components/AddSourceForm';
+import { SourceRow } from '../../sources/components/SourceRow';
 import { DetailRow, DetailSection } from '../components/DetailSection';
 import { useStudyspace } from '../hooks/useStudyspace';
-import { REFERENCE_TYPE_LABEL, SOURCE_TYPE_LABEL } from '../labels';
+import { REFERENCE_TYPE_LABEL } from '../labels';
 
 const BackLink = () => (
   <Link
@@ -25,6 +29,8 @@ const BackLink = () => (
 export const StudyspaceDetailPage = () => {
   const { studyspaceId } = useParams();
   const id = Number(studyspaceId);
+  // Declared above the early returns: hooks cannot run conditionally.
+  const [addingSource, setAddingSource] = useState(false);
   const { data: studyspace, isPending, isError, error, refetch } = useStudyspace(id);
 
   if (isPending) {
@@ -92,24 +98,20 @@ export const StudyspaceDetailPage = () => {
           title="Sources"
           count={studyspace.sources.length}
           emptyMessage="No sources uploaded yet."
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setAddingSource((open) => !open)}>
+              {addingSource ? 'Close' : 'Add source'}
+            </Button>
+          }
+          banner={
+            addingSource && (
+              <AddSourceForm studyspaceId={id} onDone={() => setAddingSource(false)} />
+            )
+          }
         >
           <ul>
             {studyspace.sources.map((source) => (
-              <DetailRow key={source.id}>
-                {/* Only PDFs open: the reader renders converted HTML, and there
-                    is no player for mp3/mp4 yet. */}
-                {source.source_type === 'pdf' ? (
-                  <Link
-                    to={`/source/${source.id}`}
-                    className="min-w-0 truncate text-primary-ink underline underline-offset-4"
-                  >
-                    {source.title}
-                  </Link>
-                ) : (
-                  <span className="min-w-0 truncate text-ink">{source.title}</span>
-                )}
-                <Badge>{SOURCE_TYPE_LABEL[source.source_type] ?? source.source_type}</Badge>
-              </DetailRow>
+              <SourceRow key={source.id} source={source} studyspaceId={id} />
             ))}
           </ul>
         </DetailSection>

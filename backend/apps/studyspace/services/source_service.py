@@ -39,4 +39,5 @@ class SourceService:
         return reader_html
 
     def _is_current(self, source: Source) -> bool:
-        return bool(source.converted_file) and source.converted_with == CONVERTER_VERSION
+        # Una sola definicion de "esta convertido", compartida con el serializer.
+        return source.is_converted

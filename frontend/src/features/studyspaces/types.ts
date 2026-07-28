@@ -19,6 +19,8 @@ export interface SourceMinimal {
   id: number;
   title: string;
   source_type: SourceType;
+  /** Source.is_converted — stored HTML exists AND matches CONVERTER_VERSION. */
+  is_converted: boolean;
 }
 
 /** Reference.ReferenceType choices. */

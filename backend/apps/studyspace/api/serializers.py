@@ -32,9 +32,13 @@ class NoteMinimalSerializer(serializers.ModelSerializer):
         
 
 class SourceMinimalSerializer(serializers.ModelSerializer):
+    # Property del modelo: el front necesita saber si ya se puede leer o si
+    # todavia hay que mandar a convertir.
+    is_converted = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Source
-        fields = ['id', 'title', 'source_type']
+        fields = ['id', 'title', 'source_type', 'is_converted']
         
         
 class ReferenceSerializer(serializers.ModelSerializer):
@@ -152,6 +156,45 @@ class SourceCreateSerializer(serializers.ModelSerializer):
             validated_data['title'] = validated_data['file'].name[:255]
             
         return super().create(validated_data)
+
+
+class AnnotationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Annotation
+        fields = [
+            'id',
+            'source',
+            'annotation_type',
+            'content',
+            'anchor',
+            'page',
+            'ranges',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
+
+    def validate_ranges(self, value):
+        """Cada rango necesita anchor/start/end: sin eso no se puede repintar."""
+        if not isinstance(value, list) or not value:
+            raise serializers.ValidationError("Se requiere al menos un rango.")
+
+        for item in value:
+            if not isinstance(item, dict):
+                raise serializers.ValidationError("Cada rango debe ser un objeto.")
+
+            missing = {'anchor', 'start', 'end'} - set(item)
+            if missing:
+                raise serializers.ValidationError(
+                    f"Falta {', '.join(sorted(missing))} en un rango."
+                )
+
+            if not isinstance(item['start'], int) or not isinstance(item['end'], int):
+                raise serializers.ValidationError("start y end deben ser enteros.")
+
+            if item['start'] < 0 or item['end'] <= item['start']:
+                raise serializers.ValidationError("Rango invalido: end debe ser mayor que start.")
+
+        return value
 
 
 class SourceProgressUpdateSerializer(serializers.ModelSerializer):

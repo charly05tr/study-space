@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router-dom'
 import './index.css'
 import { router } from './routes/AppRouter'
 import { NotificationProvider } from './components/ui'
+import { ThemeSync } from './components/ThemeSync'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,6 +19,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <NotificationProvider>
+        <ThemeSync />
         <RouterProvider router={router} />
       </NotificationProvider>
     </QueryClientProvider>

@@ -1,0 +1,153 @@
+import type { AnchorRange } from '../annotations/types';
+
+export const BLOCK_SELECTOR = '[data-pagina][id]';
+export const MARK_CLASS = 'studyspace-mark';
+
+/** Nearest converted-document block that owns a node. */
+const blockOf = (node: Node | null): HTMLElement | null => {
+  const element = node instanceof Element ? node : (node?.parentElement ?? null);
+  return element?.closest<HTMLElement>(BLOCK_SELECTOR) ?? null;
+};
+
+/** Ordered text nodes of a block, with the character offset each one starts at. */
+const textNodesOf = (block: Element): Array<{ node: Text; start: number }> => {
+  const walker = block.ownerDocument.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  const nodes: Array<{ node: Text; start: number }> = [];
+  let offset = 0;
+
+  let current = walker.nextNode();
+  while (current) {
+    const text = current as Text;
+    nodes.push({ node: text, start: offset });
+    offset += text.length;
+    current = walker.nextNode();
+  }
+  return nodes;
+};
+
+const textLengthOf = (block: Element): number =>
+  textNodesOf(block).reduce((total, entry) => total + entry.node.length, 0);
+
+/** Character offset of (node, offset) measured from the start of the block. */
+const offsetWithinBlock = (block: Element, node: Node, offset: number): number => {
+  if (node === block) return 0;
+
+  for (const entry of textNodesOf(block)) {
+    if (entry.node === node) return entry.start + offset;
+  }
+  return 0;
+};
+
+/**
+ * Converts a live selection into anchor-relative ranges.
+ *
+ * Offsets are counted in characters inside a block rather than as DOM paths,
+ * which is what makes a highlight survive re-conversion: the block anchor is
+ * derived from its content, and the text inside it does not move.
+ */
+export const rangesFromSelection = (
+  doc: Document,
+): { ranges: AnchorRange[]; page: number; text: string } | null => {
+  const selection = doc.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+
+  const domRange = selection.getRangeAt(0);
+  const text = domRange.toString().trim();
+  if (!text) return null;
+
+  const startBlock = blockOf(domRange.startContainer);
+  const endBlock = blockOf(domRange.endContainer);
+  if (!startBlock || !endBlock) return null;
+
+  const startOffset = offsetWithinBlock(startBlock, domRange.startContainer, domRange.startOffset);
+  const endOffset = offsetWithinBlock(endBlock, domRange.endContainer, domRange.endOffset);
+  const page = Number(startBlock.dataset.pagina ?? 0);
+
+  if (startBlock === endBlock) {
+    if (endOffset <= startOffset) return null;
+    return {
+      ranges: [{ anchor: startBlock.id, start: startOffset, end: endOffset }],
+      page,
+      text,
+    };
+  }
+
+  // Multi-block selection: head, whole middles, tail.
+  const blocks = Array.from(doc.querySelectorAll<HTMLElement>(BLOCK_SELECTOR));
+  const from = blocks.indexOf(startBlock);
+  const to = blocks.indexOf(endBlock);
+  if (from === -1 || to === -1 || to < from) return null;
+
+  const ranges: AnchorRange[] = [];
+  for (let index = from; index <= to; index += 1) {
+    const block = blocks[index];
+    const length = textLengthOf(block);
+    const start = index === from ? startOffset : 0;
+    const end = index === to ? endOffset : length;
+    if (end > start) ranges.push({ anchor: block.id, start, end });
+  }
+
+  return ranges.length > 0 ? { ranges, page, text } : null;
+};
+
+/** Removes every painted mark and stitches the split text nodes back together. */
+export const clearHighlights = (doc: Document) => {
+  doc.querySelectorAll<HTMLElement>(`.${MARK_CLASS}`).forEach((mark) => {
+    const parent = mark.parentNode;
+    if (!parent) return;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  });
+};
+
+interface PaintTarget {
+  annotationId: number;
+  range: AnchorRange;
+}
+
+/**
+ * Wraps each range in a <mark>. Ranges are resolved against the current DOM, so
+ * this must run after the frame has loaded and after any clearHighlights().
+ */
+export const paintHighlights = (doc: Document, targets: PaintTarget[]) => {
+  targets.forEach(({ annotationId, range }) => {
+    const block = doc.getElementById(range.anchor);
+    if (!block) return;
+
+    // Collected before mutating: wrapping splits text nodes and would
+    // invalidate offsets computed from a live walk.
+    const slices: Array<{ node: Text; from: number; to: number }> = [];
+
+    for (const { node, start } of textNodesOf(block)) {
+      const nodeEnd = start + node.length;
+      if (nodeEnd <= range.start || start >= range.end) continue;
+      slices.push({
+        node,
+        from: Math.max(0, range.start - start),
+        to: Math.min(node.length, range.end - start),
+      });
+    }
+
+    slices.forEach(({ node, from, to }) => {
+      if (to <= from) return;
+      const domRange = doc.createRange();
+      domRange.setStart(node, from);
+      domRange.setEnd(node, to);
+
+      const mark = doc.createElement('mark');
+      mark.className = MARK_CLASS;
+      mark.dataset.annotationId = String(annotationId);
+      try {
+        domRange.surroundContents(mark);
+      } catch {
+        // Range crossing element boundaries: skip rather than corrupt the DOM.
+      }
+    });
+  });
+};
+
+/** Scrolls to the block that owns an annotation. */
+export const scrollToAnchor = (doc: Document, anchor: string) => {
+  doc.getElementById(anchor)?.scrollIntoView({ block: 'center' });
+};

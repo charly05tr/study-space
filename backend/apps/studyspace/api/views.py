@@ -9,6 +9,7 @@ from apps.studyspace.services.studyspace_service import StudyspaceService
 from apps.studyspace.api.serializers import *
 from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.source_service import SourceService
+from apps.studyspace.services.annotation_service import AnnotationService
 
 
 class StudyspaceViewSet(viewsets.ModelViewSet):
@@ -128,6 +129,34 @@ class NoteViewSet(viewsets.ModelViewSet):
         return Response(NoteDetailSerializer(note).data, status=status.HTTP_200_OK)
             
     
+class AnnotationViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AnnotationSerializer
+    filterset_fields = ['source', 'annotation_type']
+
+    # El lector necesita TODAS las anotaciones de un source para poder pintarlas.
+    # Con la paginacion global (PAGE_SIZE=10) solo se resaltarian las 10 primeras.
+    pagination_class = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = AnnotationService()
+        self.source_service = SourceService()
+
+    def get_queryset(self):
+        return self.service.get_user_annotations(user=self.request.user)
+
+    def perform_create(self, serializer):
+        # Sin esto se podria anotar el source de otra cuenta pasando su id:
+        # el queryset filtra la lectura, no la escritura.
+        source = serializer.validated_data['source']
+        owned = self.source_service.get_user_sources(user=self.request.user)
+        if not owned.filter(pk=source.pk).exists():
+            raise ValidationError("La fuente no existe o no te pertenece.")
+
+        serializer.instance = self.service.create_annotation(serializer.validated_data)
+
+
 class SourceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
@@ -152,6 +181,32 @@ class SourceViewSet(viewsets.ModelViewSet):
             return SourceSerializer
         return SourceMinimalSerializer
     
+    @action(detail=True, methods=['post'], url_path='convert')
+    def convert_source(self, request, pk=None):
+        """Convierte y responde solo el estado.
+
+        convert-pdf-to-html devuelve el HTML completo, que puede pesar decenas
+        de MB. Para un boton de "convertir" eso seria descargar el libro entero
+        para descartarlo.
+        """
+        sources = self.service.get_user_sources(user=request.user)
+        source = get_object_or_404(sources, pk=pk)
+
+        try:
+            self.service.convert(source=source)
+        except Exception as error:
+            return Response(
+                {"detail": f"The PDF could not be converted: {error}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response({
+            'id': source.pk,
+            'title': source.title,
+            'is_converted': source.is_converted,
+            'updated_at': source.updated_at,
+        }, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], url_path='convert-pdf-to-html')
     def convert_pdf_to_html(self, request, pk=None):
         # 1. Obtenemos el queryset seguro del usuario

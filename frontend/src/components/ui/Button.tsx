@@ -11,8 +11,10 @@ const base =
   'disabled:pointer-events-none disabled:opacity-45';
 
 const variants: Record<ButtonVariant, string> = {
-  /* Gold fill with ink text: 4.62:1. The reverse (light text on gold) is 2.19:1. */
-  primary: 'border-primary bg-primary text-ink hover:border-primary-400 hover:bg-primary-400',
+  /* Gold fill with on-primary text: 4.62:1. Not text-ink — that token flips
+     light in dark mode and light on gold is 1.8:1. */
+  primary:
+    'border-primary bg-primary text-on-primary hover:border-primary-400 hover:bg-primary-400',
   secondary: 'border-ink bg-transparent text-ink hover:bg-tint',
   /* Transparent border keeps the box the same size as the other variants. */
   quiet: 'border-transparent bg-transparent text-muted hover:border-rule hover:text-ink',

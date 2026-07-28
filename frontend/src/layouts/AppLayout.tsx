@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Button, cn } from '../components/ui';
 import { useAuthStore } from '../features/auth/store/authStore';
+import { useThemeStore } from '../store/themeStore';
 
 const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -13,6 +14,8 @@ const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
 export const AppLayout = () => {
   const navigate = useNavigate();
   const logout = useAuthStore((state) => state.logout);
+  const theme = useThemeStore((state) => state.theme);
+  const toggleTheme = useThemeStore((state) => state.toggle);
 
   const handleLogout = () => {
     logout();
@@ -28,6 +31,16 @@ export const AppLayout = () => {
         </Link>
         <nav>
           <ul className="flex items-center gap-2">
+            <li>
+              <Button
+                variant="quiet"
+                size="sm"
+                aria-pressed={theme === 'dark'}
+                onClick={toggleTheme}
+              >
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </Button>
+            </li>
             <li>
               <Button variant="quiet" size="sm" onClick={() => navigate('/profile')}>
                 Profile

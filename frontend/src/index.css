@@ -38,6 +38,9 @@
   --color-primary-ink: #8a6516;
   --color-primary-800: #6b4e11;
   --color-primary-900: #4d380c;
+  /* Text placed ON a primary fill. Stays dark in both themes: --color-ink
+     flips light in dark mode, and light on goldenrod is 1.8:1. */
+  --color-on-primary: #3d3b49;
 
   /* --- Semantic states -------------------------------------------------- */
   /* Muted brick and sage rather than pure red/green: saturated signal colors
@@ -50,6 +53,35 @@
   /* --- Layout ---------------------------------------------------------- */
   /* Roughly 68 characters per line, the comfortable range for prose. */
   --container-measure: 36em;
+}
+
+/*
+  Dark theme. Only the token values change, so every utility already written
+  against them (bg-page, text-ink, border-rule…) flips with no component edits.
+  Contrast measured against --color-page #1c1b21.
+*/
+@layer base {
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+
+    --color-page: #1c1b21;
+    --color-ink: #e8e4da; /* 13.5:1 */
+    --color-muted: #a09a8c; /* 6.1:1 */
+    --color-rule: #34323a;
+    --color-tint: #4a4128;
+
+    /* On dark, goldenrod itself clears 7.7:1, but primary-ink drops to 3.2:1 —
+       so the accessible text variant has to become lighter, not darker. */
+    --color-primary-ink: #e3c15f; /* 9.9:1 */
+    --color-primary-50: #2a2418;
+    --color-primary-100: #3a3020;
+    --color-primary-200: #4d3f26;
+
+    --color-danger: #e39b93; /* 7.7:1 */
+    --color-danger-soft: #33211f;
+    --color-success: #9dc0a3; /* 8.6:1 */
+    --color-success-soft: #1f2a21;
+  }
 }
 
 @layer base {

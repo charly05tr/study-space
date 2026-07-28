@@ -74,6 +74,17 @@ class Source(models.Model):
 
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def is_converted(self) -> bool:
+        """Hay HTML guardado y lo genero la version actual del conversor.
+
+        Import local: services.pdf_service es pesado y solo hace falta al
+        consultar esto, no al cargar el modelo.
+        """
+        from apps.studyspace.services.pdf_service import CONVERTER_VERSION
+
+        return bool(self.converted_file) and self.converted_with == CONVERTER_VERSION
+
 
 @receiver(post_delete, sender=Source)
 def borrar_archivos_de_source(sender, instance, **kwargs):
