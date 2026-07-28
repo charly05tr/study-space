@@ -39,6 +39,14 @@
   --color-primary-800: #6b4e11;
   --color-primary-900: #4d380c;
 
+  /* --- Semantic states -------------------------------------------------- */
+  /* Muted brick and sage rather than pure red/green: saturated signal colors
+     fight the sepia paper. Both clear 5.8:1 on --color-page. */
+  --color-danger: #9c3b32;
+  --color-danger-soft: #f7ece9;
+  --color-success: #4a6b4f;
+  --color-success-soft: #eef2ec;
+
   /* --- Layout ---------------------------------------------------------- */
   /* Roughly 68 characters per line, the comfortable range for prose. */
   --container-measure: 36em;
