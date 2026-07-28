@@ -1,111 +1,85 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import 'tailwindcss';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+  Design tokens. Everything declared inside @theme becomes both a CSS variable
+  and a Tailwind utility (--color-page -> bg-page / text-page / border-page).
+*/
+@theme {
+  /* --- Typography ------------------------------------------------------ */
+  --font-body: 'Faustina', 'Iowan Old Style', Georgia, serif;
+  --font-heading: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+  /* Script face reserved for the largest display text only (brand, hero).
+     It is unreadable below ~32px, so it is never the default heading font. */
+  --font-display: 'Petit Formal Script', 'Cormorant Garamond', cursive;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --text-body: 19px;
+  --text-body--line-height: 1.7;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+  /* --- Surfaces and ink ------------------------------------------------ */
+  --color-page: #fdfbf7;
+  /* 5.3:1 on the sepia — the small caps and page numbers are all small text,
+     so 4.5:1 is the floor, not 3:1. */
+  --color-ink: #3d3b49;
+  --color-muted: #6f685c;
+  --color-rule: #e6e0d4;
+  --color-tint: #f3e8cd;
+
+  /* --- Primary (goldenrod) --------------------------------------------- */
+  /* primary itself is 2.2:1 on --color-page: decorative use only (rules,
+     fills, icons, focus rings). For text on the page use primary-ink. */
+  --color-primary-50: #fbf6e8;
+  --color-primary-100: #f5e9c6;
+  --color-primary-200: #ecd694;
+  --color-primary-300: #e3c15f;
+  --color-primary-400: #dcb038;
+  --color-primary: #daa520;
+  --color-primary-600: #b8871a;
+  /* 5.2:1 on --color-page — the accessible text/link variant. */
+  --color-primary-ink: #8a6516;
+  --color-primary-800: #6b4e11;
+  --color-primary-900: #4d380c;
+
+  /* --- Layout ---------------------------------------------------------- */
+  /* Roughly 68 characters per line, the comfortable range for prose. */
+  --container-measure: 36em;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-page);
   }
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  body {
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    line-height: 1.2;
+    text-wrap: balance;
   }
-}
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+  hr {
+    border-color: var(--color-rule);
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+  ::selection {
+    background-color: var(--color-tint);
   }
-}
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
 }
