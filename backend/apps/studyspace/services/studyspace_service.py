@@ -33,6 +33,6 @@ class StudyspaceService:
         
         return studyspace
         
-    def get_user_studyspaces(self, user):
+    def get_user_studyspaces(self, user) -> list[Studyspace]:
         return Studyspace.objects.filter(user=user)
     

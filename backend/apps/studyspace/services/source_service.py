@@ -1,12 +1,16 @@
 from django.core.files.base import ContentFile
 
-from apps.studyspace.models import Source
+from apps.studyspace.models import Source, Studyspace
 from apps.studyspace.services.pdf_service import CONVERTER_VERSION, pdf_to_html
+from apps.users.models import User
 
 
 class SourceService:
     """Entrega el HTML de lectura de una fuente, convirtiéndola cuando hace falta."""
 
+    def get_user_sources(self, user: User) -> list[Source]:
+        return Source.objects.filter(study_space__user=user)      
+    
     def get_reader_html(self, source: Source) -> str:
         if self._is_current(source):
             with source.converted_file.open('rb') as stored_html:

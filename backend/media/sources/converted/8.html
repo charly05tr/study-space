@@ -88,6 +88,12 @@
         strong { font-weight: 700; }
         em { font-style: italic; }
 
+        /* The converter emits <mark> for text that carried a distinguishing
+           style in the PDF, mostly figure captions. Left at the browser's
+           yellow default it would collide with the reader's own highlights,
+           which is what that colour has to mean here. */
+        mark { background: none; color: inherit; }
+
         img {
             display: block;
             max-width: 100%;
