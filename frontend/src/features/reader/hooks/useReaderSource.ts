@@ -16,3 +16,27 @@ export const useReaderSource = (sourceId: number) =>
     gcTime: 5 * 60 * 1000,
     retry: false,
   });
+
+export const readingPositionQueryKey = (sourceId: number) =>
+  ['reader', sourceId, 'position'] as const;
+
+/**
+ * Where to resume from — deliberately a separate query.
+ *
+ * It used to be read off the reader payload, which is cached with
+ * `staleTime: Infinity` so a book is never downloaded twice. The bookmark was
+ * along for that ride: scroll, leave, come back inside the gc window, and the
+ * reader restored the position from the cached payload instead of the one it
+ * had just saved. A document and the place you stopped reading it do not share
+ * a lifetime, so they cannot share a cache entry.
+ */
+export const useReadingPosition = (sourceId: number) =>
+  useQuery({
+    queryKey: readingPositionQueryKey(sourceId),
+    queryFn: () => readerApi.readingPosition(sourceId),
+    enabled: Number.isFinite(sourceId),
+    // The opposite of the payload above: always re-read on open.
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });

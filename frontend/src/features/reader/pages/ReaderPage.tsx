@@ -22,7 +22,7 @@ import {
   useReaderPrefsStore,
 } from '../store/readerPrefsStore';
 import { useNoteCard } from '../hooks/useNoteCard';
-import { useReaderSource } from '../hooks/useReaderSource';
+import { useReaderSource, useReadingPosition } from '../hooks/useReaderSource';
 import { useSaveProgress } from '../hooks/useSaveProgress';
 
 /** Stable identity: `?? []` inline would repaint every highlight on every render. */
@@ -38,7 +38,7 @@ export const ReaderPage = () => {
    * wherever they happened to stop last time.
    */
   const [searchParams] = useSearchParams();
-  const requestedAnchor = searchParams.get('anchor');
+  const citationAnchor = searchParams.get('anchor');
   const { notify } = useNotification();
   const frame = useRef<ReaderFrameHandle>(null);
   const shell = useRef<HTMLDivElement>(null);
@@ -66,13 +66,30 @@ export const ReaderPage = () => {
   const [totalPages, setTotalPages] = useState(0);
 
   const { data, isPending, isError, error, refetch } = useReaderSource(id);
+  // Separate from the payload above, which is cached for the life of the tab.
+  // See useReadingPosition.
+  const positionQuery = useReadingPosition(id);
   const annotationsQuery = useAnnotations(id);
   const createAnnotation = useCreateAnnotation(id);
   const deleteAnnotation = useDeleteAnnotation(id);
   const saveProgress = useSaveProgress(id);
   const annotations = annotationsQuery.data;
 
-  const handleAnchorChange = useCallback((anchor: string) => saveProgress(anchor), [saveProgress]);
+  const handleAnchorChange = useCallback(
+    (anchor: string) => {
+      /**
+       * Opening a citation is a visit, not a reading session.
+       *
+       * The jump scrolls the frame, the frame reports the block it landed on,
+       * and that used to be written straight into last_anchor — so checking a
+       * quote you saved months ago silently threw away the page you were
+       * actually on. A bookmark you did not ask to move must not move.
+       */
+      if (citationAnchor) return;
+      saveProgress(anchor);
+    },
+    [citationAnchor, saveProgress],
+  );
 
   const goToPage = useCallback(
     (page: number) => setFocusPage((current) => Math.min(Math.max(page, 1), totalPages || current)),
@@ -174,7 +191,9 @@ export const ReaderPage = () => {
     frame.current?.scrollToAnchor(annotation.anchor);
   };
 
-  if (isPending) return <Loading full label="Opening source" />;
+  // Both, not just the HTML: the frame scrolls to `initialAnchor` once, when it
+  // loads, so rendering before the position arrives would resume from nowhere.
+  if (isPending || positionQuery.isPending) return <Loading full label="Opening source" />;
 
   if (isError) {
     return (
@@ -265,7 +284,7 @@ export const ReaderPage = () => {
             ref={frame}
             html={data.reader_html}
             title={data.title}
-            initialAnchor={requestedAnchor || data.last_anchor}
+            initialAnchor={citationAnchor || positionQuery.data?.last_anchor || ''}
             fontSize={fontSize}
             dark={dark}
             mode={mode}

@@ -1,5 +1,5 @@
 import axios from '../../../config/axios';
-import type { ProgressPayload, ReaderPayload } from '../types';
+import type { ProgressPayload, ReaderPayload, ReadingPosition } from '../types';
 
 const BASE_URL = '/sources';
 
@@ -19,6 +19,19 @@ export const readerApi = {
       },
     );
     return response.data;
+  },
+
+  /**
+   * Read separately from the reader payload on purpose. That one is cached for
+   * the life of the tab because the HTML is huge; this is the one field that
+   * changes while you read, so it has to come off the wire every time.
+   */
+  readingPosition: async (sourceId: number): Promise<ReadingPosition> => {
+    const response = await axios.get(`${BASE_URL}/${sourceId}/`);
+    return {
+      last_anchor: response.data.last_anchor ?? '',
+      last_position: response.data.last_position ?? 0,
+    };
   },
 
   saveProgress: async (sourceId: number, progress: ProgressPayload): Promise<void> => {
