@@ -33,13 +33,21 @@ interface Block {
  */
 const INSTANT = { behavior: 'instant' } as const;
 
-/** Dark palette over the converted document's own :root variables. 13.5:1 body, 6.1:1 muted. */
+/**
+ * Dark palette over the converted document's own :root variables. 13.5:1 body,
+ * 6.1:1 muted.
+ *
+ * --selection-tint is deliberately a deeper gold than --target-tint: a live
+ * selection and a saved highlight sit side by side in this document, and if
+ * they shared a colour there would be no telling which is which.
+ */
 const DARK_VARS: Record<string, string> = {
   '--page-background': '#1c1b21',
   '--text-color': '#e8e4da',
   '--muted-color': '#a09a8c',
   '--rule-color': '#34323a',
   '--target-tint': '#4a4128',
+  '--selection-tint': '#5f5330', // 6.0:1 under --text-color
 };
 
 const LIGHT_VARS: Record<string, string> = {
@@ -48,6 +56,7 @@ const LIGHT_VARS: Record<string, string> = {
   '--muted-color': '#6f685c',
   '--rule-color': '#e6e0d4',
   '--target-tint': '#f3e8cd',
+  '--selection-tint': '#ecd694', // 7.6:1 under --text-color
 };
 
 export interface SelectionInfo {

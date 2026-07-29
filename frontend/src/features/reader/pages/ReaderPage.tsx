@@ -16,17 +16,17 @@ import type { ReaderFrameHandle, SelectionInfo } from '../components/ReaderFrame
 import { SelectionToolbar } from '../components/SelectionToolbar';
 import type { ReaderMode } from '../readerStyles';
 import { useThemeStore } from '../../../store/themeStore';
+import {
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
+  useReaderPrefsStore,
+} from '../store/readerPrefsStore';
 import { useNoteCard } from '../hooks/useNoteCard';
 import { useReaderSource } from '../hooks/useReaderSource';
 import { useSaveProgress } from '../hooks/useSaveProgress';
 
 /** Stable identity: `?? []` inline would repaint every highlight on every render. */
 const NO_ANNOTATIONS: Annotation[] = [];
-
-// Matches --body-size in the converted document.
-const DEFAULT_FONT_SIZE = 19;
-const MIN_FONT_SIZE = 15;
-const MAX_FONT_SIZE = 28;
 
 export const ReaderPage = () => {
   const { sourceId } = useParams();
@@ -36,13 +36,20 @@ export const ReaderPage = () => {
   const frame = useRef<ReaderFrameHandle>(null);
   const shell = useRef<HTMLDivElement>(null);
 
-  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
+  // Reading preferences outlive the page: they belong to the reader, not to
+  // this mount. Kept as separate selectors so a font change does not re-render
+  // through the panel's identity, or the other way round.
+  const fontSize = useReaderPrefsStore((state) => state.fontSize);
+  const adjustFontSize = useReaderPrefsStore((state) => state.adjustFontSize);
+  const panelOpen = useReaderPrefsStore((state) => state.panelOpen);
+  const setPanelOpen = useReaderPrefsStore((state) => state.setPanelOpen);
+  const togglePanel = useReaderPrefsStore((state) => state.togglePanel);
+
   // Shared with the rest of the app: the frame and the chrome must agree.
   const theme = useThemeStore((state) => state.theme);
   const toggleTheme = useThemeStore((state) => state.toggle);
   const dark = theme === 'dark';
   const [mode, setMode] = useState<ReaderMode>('free');
-  const [panelOpen, setPanelOpen] = useState(false);
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const noteCard = useNoteCard();
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -212,7 +219,7 @@ export const ReaderPage = () => {
               size="sm"
               aria-label="Decrease text size"
               disabled={fontSize <= MIN_FONT_SIZE}
-              onClick={() => setFontSize((size) => Math.max(MIN_FONT_SIZE, size - 1))}
+              onClick={() => adjustFontSize(-1)}
             >
               A&minus;
             </Button>
@@ -221,7 +228,7 @@ export const ReaderPage = () => {
               size="sm"
               aria-label="Increase text size"
               disabled={fontSize >= MAX_FONT_SIZE}
-              onClick={() => setFontSize((size) => Math.min(MAX_FONT_SIZE, size + 1))}
+              onClick={() => adjustFontSize(1)}
             >
               A+
             </Button>
@@ -237,7 +244,7 @@ export const ReaderPage = () => {
               variant="quiet"
               size="sm"
               aria-pressed={panelOpen}
-              onClick={() => setPanelOpen((value) => !value)}
+              onClick={togglePanel}
             >
               Notes
             </Button>

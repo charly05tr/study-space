@@ -49,6 +49,17 @@ export const readerCss = (mode: ReaderMode) => `
     box-shadow: none;
   }
 
+  /* The frame is its own document, so the app's ::selection never reached it
+     and selecting text showed the browser's blue over sepia paper.
+
+     The text colour is restated on purpose: the UA sheet pairs its highlight
+     with a light text colour, and overriding only the background leaves that
+     pairing in place. */
+  ::selection {
+    background-color: var(--selection-tint);
+    color: var(--text-color);
+  }
+
   .${MARK_CLASS} {
     background-color: var(--target-tint);
     color: inherit;
