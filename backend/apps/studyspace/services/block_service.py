@@ -8,9 +8,10 @@ from django.utils import timezone
 
 from apps.studyspace.models import Block, BlockLink, Note
 
-# Tipos de nodo de Tiptap que llevan un id y por lo tanto son nodos del grafo.
-# Espeja ID_BEARING_BLOCKS en frontend/src/features/notes/editorExtensions.ts:
-# si las dos listas se separan, aparecen bloques con id que nunca se indexan.
+# Tipos de nodo de Tiptap que PUEDEN ser nodos del grafo. Es el mismo conjunto
+# que ID_BEARING_BLOCKS en frontend/src/features/notes/editorExtensions.ts, pero
+# no alcanza por si solo: extract_blocks todavia descarta los vacios y los
+# contenedores. Un tipo que este alla y falte aca nunca se indexa.
 INDEXED_TYPES = frozenset({
     'paragraph',
     'heading',
@@ -47,13 +48,20 @@ class ExtractedLink:
 def _node_text(node: dict) -> str:
     """Todo el texto que cuelga de un nodo, concatenado.
 
-    Una annotation es un atom: no tiene hijos de texto, la cita vive en sus
-    attrs. Sin este caso especial las citas entrarian al grafo sin etiqueta.
+    Los dos casos especiales son atoms: no tienen hijos de texto, su contenido
+    vive en attrs. Sin ellos una cita entraria al grafo sin etiqueta, y un
+    parrafo cuyo unico contenido es una mencion `[[` contaria como vacio y se
+    descartaria junto con la relacion que lleva adentro.
     """
-    if node.get('type') == 'annotation':
+    node_type = node.get('type')
+
+    if node_type == 'annotation':
         return (node.get('attrs') or {}).get('content') or ''
 
-    if node.get('type') == 'text':
+    if node_type == LINK_NODE_TYPE:
+        return (node.get('attrs') or {}).get('label') or ''
+
+    if node_type == 'text':
         return node.get('text') or ''
 
     return ''.join(_node_text(child) for child in node.get('content') or [])
@@ -62,30 +70,66 @@ def _node_text(node: dict) -> str:
 def extract_blocks(content: dict) -> list[ExtractedBlock]:
     """Recorre el documento en orden de lectura y devuelve sus bloques.
 
-    Es pura: no toca la base. Eso permite calcular la huella y compararla antes
-    de decidir si vale la pena escribir algo.
+    Dos reglas deciden que entra al grafo, y las dos existen porque el ruido que
+    sacan es ESTRUCTURAL, no culpa de quien escribe:
+
+    1. Un bloque sin texto no entra. Tiptap deja un parrafo vacio al final de
+       cada nota (TrailingNode), asi que sin esta regla el mapa arranca con un
+       nodo mudo por nota, imposible de encontrar buscando y sin nada que decir.
+
+    2. Solo entra el bloque indexable MAS INTERNO. Una lista de tres viñetas
+       producia siete nodos: la lista, sus tres items y los tres parrafos que
+       llevan adentro, los cuatro ultimos repitiendo el mismo texto. El texto de
+       un contenedor es la suma del de sus hijos, asi que dibujarlo es dibujar
+       lo mismo dos veces.
+
+    Sigue siendo pura: no toca la base. Eso permite calcular la huella y
+    compararla antes de decidir si vale la pena escribir algo.
     """
+    if not isinstance(content, dict):
+        return []
+
+    keep: set[str] = set()
+
+    def choose(node: dict) -> bool:
+        """Post-orden: hay que saber que hay debajo antes de decidir el nodo."""
+        indexed_below = False
+        for child in node.get('content') or []:
+            if choose(child):
+                indexed_below = True
+
+        block_id = (node.get('attrs') or {}).get('id')
+        if (
+            node.get('type') in INDEXED_TYPES
+            and block_id
+            and not indexed_below
+            and _node_text(node).strip()
+        ):
+            keep.add(str(block_id))
+            return True
+
+        return indexed_below
+
+    choose(content)
+
     blocks: list[ExtractedBlock] = []
 
-    def walk(node: dict) -> None:
+    def collect(node: dict) -> None:
+        """Pre-orden, para que `position` siga el orden de lectura."""
         block_id = (node.get('attrs') or {}).get('id')
-        node_type = node.get('type')
 
-        if node_type in INDEXED_TYPES and block_id:
+        if block_id and str(block_id) in keep:
             blocks.append(ExtractedBlock(
                 id=str(block_id),
-                block_type=node_type,
+                block_type=node.get('type') or '',
                 text=_node_text(node).strip(),
                 position=len(blocks),
             ))
 
-        # Se sigue bajando aunque el nodo ya se haya registrado: una lista es un
-        # bloque y sus items tambien lo son.
         for child in node.get('content') or []:
-            walk(child)
+            collect(child)
 
-    if isinstance(content, dict):
-        walk(content)
+    collect(content)
 
     return blocks
 

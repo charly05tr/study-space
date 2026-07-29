@@ -231,6 +231,15 @@ class BlockSerializer(serializers.ModelSerializer):
         fields = ['id', 'note', 'note_title', 'studyspace', 'block_type', 'text', 'position']
 
 
+class BlockVisibilitySerializer(serializers.ModelSerializer):
+    """Lo unico de un Block que la API puede escribir."""
+
+    class Meta:
+        model = Block
+        fields = ['id', 'excluded_from_map']
+        read_only_fields = ['id']
+
+
 class BlockLinkSerializer(serializers.ModelSerializer):
     source_text = serializers.CharField(source='source.text', read_only=True)
     target_text = serializers.CharField(source='target.text', read_only=True)

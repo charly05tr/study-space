@@ -1,6 +1,6 @@
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets, status
+from rest_framework import mixins, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response 
@@ -63,7 +63,9 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
 
         nodes = (
             Block.objects
-            .filter(note__studyspace=studyspace)
+            # excluded_from_map es una decision del usuario sobre el mapa, no
+            # sobre la nota: el bloque sigue existiendo y sus relaciones tambien.
+            .filter(note__studyspace=studyspace, excluded_from_map=False)
             .select_related('note')
             .order_by('note_id', 'position')
         )
@@ -298,11 +300,12 @@ class SourceViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_200_OK)
         
 
-class BlockViewSet(viewsets.ReadOnlyModelViewSet):
-    """Solo lectura: los bloques nacen del documento, nunca de la API.
+class BlockViewSet(mixins.UpdateModelMixin, viewsets.ReadOnlyModelViewSet):
+    """El contenido nace del documento; solo la visibilidad en el mapa se edita.
 
-    Escribir uno aca lo pondria en desacuerdo con Note.content hasta el proximo
-    guardado, que lo revertiria sin avisar.
+    Escribir el texto o el tipo de un bloque aca lo pondria en desacuerdo con
+    Note.content hasta el proximo guardado, que lo revertiria sin avisar. Por eso
+    el unico campo escribible es excluded_from_map, que la sincronizacion no toca.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = BlockSerializer
@@ -315,12 +318,20 @@ class BlockViewSet(viewsets.ReadOnlyModelViewSet):
     # llenar un menu que muestra diez.
     MAX_RESULTS = 50
 
+    def get_serializer_class(self):
+        if self.action in ['update', 'partial_update']:
+            return BlockVisibilitySerializer
+        return BlockSerializer
+
     def get_queryset(self):
-        return (
-            Block.objects
-            .filter(note__studyspace__user=self.request.user, deleted_at__isnull=True)
-            .select_related('note')
-        )
+        qs = Block.objects.filter(note__studyspace__user=self.request.user).select_related('note')
+
+        # El buscador de `[[` solo ofrece bloques vivos y visibles; para cambiar
+        # la visibilidad hay que poder alcanzar tambien los ya escondidos.
+        if self.action in ['list', 'retrieve']:
+            qs = qs.filter(deleted_at__isnull=True, excluded_from_map=False)
+
+        return qs
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())[:self.MAX_RESULTS]

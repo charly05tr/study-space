@@ -74,6 +74,12 @@ class Block(models.Model):
     # y borrar un parrafo sin querer no deberia llevarselas puestas.
     deleted_at = models.DateTimeField(null=True, blank=True)
 
+    # Sacado del mapa a mano. NO es lo mismo que deleted_at: ese lo decide el
+    # documento, este lo decide el usuario, y por eso la sincronizacion no lo
+    # toca. Un parrafo vacio o un bloque que no aporta al grafo se esconde sin
+    # tener que borrarlo de la nota, y sigue escondido despues de cada guardado.
+    excluded_from_map = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
