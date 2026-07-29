@@ -1,22 +1,26 @@
 import { EditorContent, useEditor } from '@tiptap/react';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../../components/ui/cn';
+import { useStudyspaceAnnotations } from '../../annotations/hooks/useAnnotations';
+import type { Annotation } from '../../annotations/types';
 import { noteExtensions } from '../editorExtensions';
 import { useNoteAutosave } from '../hooks/useNoteAutosave';
 import { toEditorContent } from '../noteDocument';
+import { NoteEditorContext } from '../noteEditorContext';
 import { SlashCommand } from '../slashCommand';
+import { annotationToNodeAttrs } from '../slashMenuItems';
 import type { NoteDocument } from '../types';
+import { AnnotationPicker } from './AnnotationPicker';
 import { FormatBubbleMenu } from './FormatBubbleMenu';
 import { SaveIndicator } from './SaveIndicator';
 
-/**
- * `noteExtensions` stays the schema contract; SlashCommand is appended here
- * because it is UI, not document shape. See the note in slashCommand.ts.
- */
-const editorExtensions = [...noteExtensions, SlashCommand];
+/** Stable identity: `?? []` inline would rebuild the picker's list every render. */
+const NO_ANNOTATIONS: Annotation[] = [];
 
 interface BlockEditorProps {
   noteId: number;
+  /** Scopes the citations the `/` menu offers. */
+  studyspaceId: number;
   /** Note.content as returned by the API. `{}` for a fresh note. */
   initialContent: NoteDocument | null;
   editable?: boolean;
@@ -27,12 +31,32 @@ interface BlockEditorProps {
 
 export const BlockEditor = ({
   noteId,
+  studyspaceId,
   initialContent,
   editable = true,
   onSave,
   className,
 }: BlockEditorProps) => {
   const { status, scheduleSave } = useNoteAutosave(noteId, { save: onSave });
+
+  // `null` while closed; the string is the query carried over from the `/` menu.
+  const [pickerQuery, setPickerQuery] = useState<string | null>(null);
+
+  // The picker lives here rather than inside SlashMenu because the suggestion
+  // popup unmounts the moment the menu closes — which is exactly when the
+  // picker has to appear.
+  const openAnnotationPicker = useCallback((query: string) => setPickerQuery(query), []);
+
+  // Reaches the `/` menu through the portal Tiptap renders it in, so the menu
+  // can load its own citations instead of having them threaded in as options.
+  const editorContext = useMemo(
+    () => ({ studyspaceId, openAnnotationPicker }),
+    [studyspaceId, openAnnotationPicker],
+  );
+
+  // Shares react-query's cache with the menu's own hook, so opening the picker
+  // costs no extra request.
+  const annotationsQuery = useStudyspaceAnnotations(studyspaceId);
 
   // The editor is rebuilt only when the note changes, so `onUpdate` must not
   // close over `scheduleSave` directly: a new identity would either remount the
@@ -47,7 +71,11 @@ export const BlockEditor = ({
 
   const editor = useEditor(
     {
-      extensions: editorExtensions,
+      /**
+       * `noteExtensions` stays the schema contract; SlashCommand is appended
+       * here because it is UI, not document shape. See slashCommand.ts.
+       */
+      extensions: [...noteExtensions, SlashCommand],
       content: toEditorContent(initialContent),
       editable,
       // The bubble menu subscribes to what it needs through `useEditorState`;
@@ -81,16 +109,35 @@ export const BlockEditor = ({
   return (
     // Width and centring belong to the page, not here: when this owned its own
     // measure it drifted out of line with the note title above it.
-    <div className={cn('w-full', className)}>
-      {/* No formatting bar: blocks come from `/` and marks from the selection,
-          so the only persistent chrome is the save state. Translucent and
-          sticky so the prose scrolls under it and stays legible. */}
-      <div className="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm">
-        <SaveIndicator status={status} />
-      </div>
+    <NoteEditorContext value={editorContext}>
+      <div className={cn('w-full', className)}>
+        {/* No formatting bar: blocks come from `/` and marks from the selection,
+            so the only persistent chrome is the save state. Translucent and
+            sticky so the prose scrolls under it and stays legible. */}
+        <div className="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm">
+          <SaveIndicator status={status} />
+        </div>
 
-      <FormatBubbleMenu editor={editor} />
-      <EditorContent editor={editor} />
-    </div>
+        <FormatBubbleMenu editor={editor} />
+        <EditorContent editor={editor} />
+
+        {pickerQuery !== null && (
+          <AnnotationPicker
+            annotations={annotationsQuery.data ?? NO_ANNOTATIONS}
+            loading={annotationsQuery.isPending}
+            initialQuery={pickerQuery}
+            onClose={() => setPickerQuery(null)}
+            onSelect={(annotation) => {
+              setPickerQuery(null);
+              editor
+                .chain()
+                .focus()
+                .insertContent({ type: 'annotation', attrs: annotationToNodeAttrs(annotation) })
+                .run();
+            }}
+          />
+        )}
+      </div>
+    </NoteEditorContext>
   );
 };

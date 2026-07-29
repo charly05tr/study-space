@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { act, useEffect } from 'react';
@@ -80,8 +81,19 @@ beforeEach(async () => {
   document.body.appendChild(container);
   root = createRoot(container);
 
+  // SlashMenu loads its own citations, so it needs a query client. No
+  // NoteEditorContext is provided: these cover the blocks half of the menu, and
+  // without a studyspace the annotation query stays disabled.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
   await act(async () => {
-    root.render(<Harness onReady={(instance) => { editor = instance; }} />);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <Harness onReady={(instance) => { editor = instance; }} />
+      </QueryClientProvider>,
+    );
   });
 });
 

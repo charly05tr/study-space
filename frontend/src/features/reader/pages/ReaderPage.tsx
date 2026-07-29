@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button, EmptyState, ErrorState, Loading, useNotification } from '../../../components/ui';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import {
@@ -32,6 +32,13 @@ export const ReaderPage = () => {
   const { sourceId } = useParams();
   const id = Number(sourceId);
   const navigate = useNavigate();
+  /**
+   * Set when arriving from a citation embedded in a note. It outranks the
+   * stored reading position: the user asked for a specific passage, not for
+   * wherever they happened to stop last time.
+   */
+  const [searchParams] = useSearchParams();
+  const requestedAnchor = searchParams.get('anchor');
   const { notify } = useNotification();
   const frame = useRef<ReaderFrameHandle>(null);
   const shell = useRef<HTMLDivElement>(null);
@@ -258,7 +265,7 @@ export const ReaderPage = () => {
             ref={frame}
             html={data.reader_html}
             title={data.title}
-            initialAnchor={data.last_anchor}
+            initialAnchor={requestedAnchor || data.last_anchor}
             fontSize={fontSize}
             dark={dark}
             mode={mode}

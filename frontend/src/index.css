@@ -162,6 +162,42 @@
   --tw-prose-td-borders: var(--color-rule);
 }
 
+/*
+  Slim scrollbar for menus and panels.
+
+  Two declarations, not one: `scrollbar-width` is the standard and is all
+  Firefox understands, while Chromium and Safari still only honour the
+  ::-webkit-scrollbar pseudo-elements. Neither is redundant.
+
+  The track stays transparent so the bar reads as part of the paper rather than
+  as a chrome gutter, and the thumb uses the rule colour, which already flips
+  with the theme.
+*/
+@utility scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-rule) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--color-rule);
+    /* Fully round, and inset from the edge so it never touches the border. */
+    border-radius: 999px;
+  }
+
+  /* Only on hover: at rest the bar should be barely there. */
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: var(--color-muted);
+  }
+}
+
 @layer components {
   /*
     Empty-block placeholder. Without it a blank note gives the writer nothing to

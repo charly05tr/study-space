@@ -9,6 +9,9 @@ class AnnotationService:
         return (
             Annotation.objects
             .filter(source__study_space__user=user)
+            # El serializer expone source_title: sin esto cada anotacion de la
+            # lista dispara su propia query por el titulo de la fuente.
+            .select_related('source')
             # Sin orden explicito la paginacion y el pintado quedan a merced del
             # orden que devuelva Postgres, que no garantiza ninguno.
             .order_by('page', 'created_at')

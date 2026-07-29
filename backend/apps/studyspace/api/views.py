@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response 
 from apps.core.adapters.cloudinary_adapter import CloudinaryAdapter
 from apps.studyspace.services.studyspace_service import StudyspaceService
+from apps.studyspace.api.filters import AnnotationFilter
 from apps.studyspace.api.serializers import *
 from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.source_service import SourceService
@@ -143,7 +144,7 @@ class NoteViewSet(viewsets.ModelViewSet):
 class AnnotationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = AnnotationSerializer
-    filterset_fields = ['source', 'annotation_type']
+    filterset_class = AnnotationFilter
 
     # El lector necesita TODAS las anotaciones de un source para poder pintarlas.
     # Con la paginacion global (PAGE_SIZE=10) solo se resaltarian las 10 primeras.

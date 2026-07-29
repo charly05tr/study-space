@@ -23,6 +23,9 @@ export const SlashCommand = Extension.create({
 
         // Default `allowedPrefixes` is [' '], so a slash inside a word — a URL
         // or a fraction — never opens the menu.
+        // Only the static blocks. The citations are appended by SlashMenu,
+        // which can fetch them with a hook because it renders inside the app's
+        // React tree — keeping the extension itself free of data loading.
         items: ({ query }) => filterSlashItems(query),
 
         command: ({ editor, range, props }) => {
@@ -39,7 +42,7 @@ export const SlashCommand = Extension.create({
             onStart: (props) => {
               renderer = new ReactRenderer(SlashMenu, {
                 editor: props.editor,
-                props: { items: props.items, command: props.command },
+                props: { items: props.items, query: props.query, command: props.command },
               });
               // `mount` hands positioning to the plugin's Floating UI loop: it
               // anchors to the cursor and follows scroll and resize on its own.
@@ -47,7 +50,7 @@ export const SlashCommand = Extension.create({
             },
 
             onUpdate: (props) => {
-              renderer?.updateProps({ items: props.items, command: props.command });
+              renderer?.updateProps({ items: props.items, query: props.query, command: props.command });
             },
 
             onKeyDown: ({ event }) => renderer?.ref?.onKeyDown(event) ?? false,

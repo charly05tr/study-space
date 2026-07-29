@@ -163,11 +163,16 @@ class SourceCreateSerializer(serializers.ModelSerializer):
 
 
 class AnnotationSerializer(serializers.ModelSerializer):
+    # El editor de notes muestra "de <fuente>, pagina N" al insertar una cita.
+    # Sin esto tendria que pedir cada source por separado solo para el titulo.
+    source_title = serializers.CharField(source='source.title', read_only=True)
+
     class Meta:
         model = Annotation
         fields = [
             'id',
             'source',
+            'source_title',
             'annotation_type',
             'content',
             'anchor',

@@ -4,6 +4,7 @@ import UniqueID from '@tiptap/extension-unique-id';
 // @tiptap/extensions utility bundle.
 import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
+import { AnnotationNode } from './annotationNode';
 
 /**
  * Block types that receive a stable `id` attribute.
@@ -25,6 +26,9 @@ export const ID_BEARING_BLOCKS = [
   'listItem',
   'codeBlock',
   'blockquote',
+  // An embedded annotation is the clearest graph node of all: it is already an
+  // edge between a source and a note, so it needs its own address.
+  'annotation',
 ] as const;
 
 /**
@@ -41,6 +45,10 @@ export const noteExtensions: Extensions = [
     // study note actually uses, and capping it keeps the graph hierarchy shallow.
     heading: { levels: [1, 2, 3] },
   }),
+
+  // Part of the schema, not of the UI: a note containing a citation must parse
+  // the same wherever it is read, including in a read-only renderer.
+  AnnotationNode,
 
   /**
    * Stamps `attrs.id` (a UUID v4) onto every block listed above.

@@ -11,6 +11,17 @@ export const useAnnotations = (sourceId: number) =>
     enabled: Number.isFinite(sourceId),
   });
 
+/** Distinct prefix from annotationsQueryKey: this set spans sources. */
+export const studyspaceAnnotationsQueryKey = (studyspaceId: number) =>
+  ['annotations', 'studyspace', studyspaceId] as const;
+
+export const useStudyspaceAnnotations = (studyspaceId: number) =>
+  useQuery({
+    queryKey: studyspaceAnnotationsQueryKey(studyspaceId),
+    queryFn: () => annotationsApi.listByStudyspace(studyspaceId),
+    enabled: Number.isFinite(studyspaceId),
+  });
+
 export const useCreateAnnotation = (sourceId: number) => {
   const queryClient = useQueryClient();
 

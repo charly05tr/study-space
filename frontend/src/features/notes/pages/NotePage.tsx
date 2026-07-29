@@ -61,7 +61,12 @@ export const NotePage = () => {
         `initialContent` once. Without a remount, navigating between two notes
         would keep the first document on screen.
       */}
-      <BlockEditor key={note.id} noteId={note.id} initialContent={note.content} />
+      <BlockEditor
+        key={note.id}
+        noteId={note.id}
+        studyspaceId={note.studyspace}
+        initialContent={note.content}
+      />
     </article>
   );
 };

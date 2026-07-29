@@ -13,6 +13,15 @@ export const annotationsApi = {
     return response.data;
   },
 
+  /**
+   * Every annotation in a studyspace, across all of its sources — what the note
+   * editor offers when inserting a citation.
+   */
+  listByStudyspace: async (studyspaceId: number): Promise<Annotation[]> => {
+    const response = await axios.get(`${BASE_URL}/`, { params: { studyspace: studyspaceId } });
+    return response.data;
+  },
+
   create: async (payload: CreateAnnotationPayload): Promise<Annotation> => {
     const response = await axios.post(`${BASE_URL}/`, payload);
     return response.data;
