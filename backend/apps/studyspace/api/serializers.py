@@ -248,3 +248,20 @@ class BlockLinkSerializer(serializers.ModelSerializer):
         # editar por la API las pondria en desacuerdo con el JSON hasta el
         # proximo guardado, que las revertiria sin avisar.
         read_only_fields = ['id', 'origin', 'created_at']
+
+
+class GraphNodeSerializer(serializers.ModelSerializer):
+    note_title = serializers.CharField(source='note.title', read_only=True)
+    # Bloque que ya no esta en ninguna nota. El grafo lo dibuja igual, apagado:
+    # el parrafo se borro pero la relacion que el usuario penso sigue ahi.
+    orphan = serializers.BooleanField(source='is_orphan', read_only=True)
+
+    class Meta:
+        model = Block
+        fields = ['id', 'note', 'note_title', 'block_type', 'text', 'orphan']
+
+
+class GraphEdgeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BlockLink
+        fields = ['id', 'source', 'target', 'kind', 'origin']

@@ -49,14 +49,43 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
             return StudyspaceDetailSerializer
         return StudyspaceListSerializer
     
+    @action(detail=True, methods=['get'], url_path='graph')
+    def graph(self, request, pk=None):
+        """El mapa conceptual completo de un studyspace, en una sola request.
+
+        No usa /blocks/ ni /block-links/ a proposito: aquel busca para el menu
+        `[[`, topea en 50 resultados y esconde los huerfanos. El grafo necesita
+        exactamente lo contrario, y pedir las dos mitades por separado dejaria
+        una ventana donde las aristas apuntan a nodos que todavia no llegaron.
+        """
+        owned = self.service.get_user_studyspaces(user=request.user)
+        studyspace = get_object_or_404(owned, pk=pk)
+
+        nodes = (
+            Block.objects
+            .filter(note__studyspace=studyspace)
+            .select_related('note')
+            .order_by('note_id', 'position')
+        )
+        edges = (
+            BlockLink.objects
+            .filter(source__note__studyspace=studyspace)
+            .only('id', 'source_id', 'target_id', 'kind', 'origin')
+        )
+
+        return Response({
+            'nodes': GraphNodeSerializer(nodes, many=True).data,
+            'edges': GraphEdgeSerializer(edges, many=True).data,
+        })
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data.copy()
         tags = data.pop('tags', [])
-        
+
         studyspace = self.service.create_studyspace(data=data, user=request.user, tags=tags)
-        
+
         return Response(StudyspaceDetailSerializer(studyspace).data, status=status.HTTP_201_CREATED)
     
     def update(self, request, *args, **kwargs):
