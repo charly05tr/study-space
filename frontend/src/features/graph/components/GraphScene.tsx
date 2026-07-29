@@ -123,9 +123,16 @@ export const GraphScene = ({
         maxDistance={1200}
       />
 
-      {/* A click that hits no node clears the focus and returns the whole map
-          to full contrast. */}
-      <mesh onClick={() => onPick(null)} visible={false}>
+      {/*
+        Double click, not click.
+
+        Dragging to orbit ends in a pointerup on this backdrop, which counts as
+        a click — so every rotation dropped the focus, hid the labels and drained
+        the colour out of the map. Turning the view is the most common thing
+        anyone does here; it must not also be the gesture that undoes their
+        selection. Letting go of a block is now something you have to mean.
+      */}
+      <mesh onDoubleClick={() => onPick(null)} visible={false}>
         <sphereGeometry args={[2000, 4, 4]} />
         <meshBasicMaterial side={2} />
       </mesh>

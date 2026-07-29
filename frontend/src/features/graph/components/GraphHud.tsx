@@ -258,12 +258,18 @@ export const GraphHud = ({
               >
                 Open the note
               </Link>
+
+              {/* The gesture is deliberately hard to trigger by accident, which
+                  also makes it impossible to stumble on. */}
+              <span className="font-heading text-[0.6rem] uppercase tracking-[0.14em] text-muted/70">
+                Double click the background to let go
+              </span>
             </div>
           </Panel>
         ) : (
           <Panel className="px-3 py-2">
             <p className="font-heading text-[0.6rem] uppercase tracking-[0.16em] text-muted">
-              Pick a block to explore · C connects it · ↑↓ then Enter follows a relation · Esc steps back
+              Pick a block to explore · C connects it · ↑↓ then Enter follows a relation
             </p>
           </Panel>
         )}

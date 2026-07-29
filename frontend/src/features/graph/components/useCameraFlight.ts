@@ -51,9 +51,34 @@ export const useCameraFlight = (
 ) => {
   const { camera } = useThree();
   const flight = useRef<Flight | null>(null);
+  /** Whether a block has ever been focused, so the first render is not a release. */
+  const held = useRef(false);
 
   useEffect(() => {
-    if (!target) return;
+    /**
+     * Letting go: the orbit centre eases back to the middle of the map.
+     *
+     * Focusing a block leaves the controls pivoting around it, so afterwards
+     * every drag swings the whole scene about that one point — the camera stays
+     * tied to something the user has already dismissed. The position is left
+     * alone and only the pivot moves, so the map does not lurch; it reads as
+     * stepping back rather than as being thrown somewhere.
+     */
+    if (!target) {
+      if (!held.current || !controls.current) return;
+      held.current = false;
+
+      flight.current = {
+        from: camera.position.clone(),
+        to: camera.position.clone(),
+        fromTarget: controls.current.target.clone(),
+        toTarget: new THREE.Vector3(0, 0, 0),
+        elapsed: 0,
+      };
+      return;
+    }
+
+    held.current = true;
 
     const destination = new THREE.Vector3(target.x, target.y, target.z);
     const origin = controls.current?.target ?? new THREE.Vector3();
