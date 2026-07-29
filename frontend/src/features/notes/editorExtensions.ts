@@ -64,7 +64,9 @@ export const noteExtensions: Extensions = [
   // Writes `data-placeholder` and an `is-empty` class; the visible text is
   // drawn by the `.prose-note` rule in index.css.
   Placeholder.configure({
+    // The empty line is the only place the `/` menu is discoverable, so the
+    // placeholder has to teach it — there is no toolbar to find it in.
     placeholder: ({ node }) =>
-      node.type.name === 'heading' ? 'Heading' : 'Write what you are studying…',
+      node.type.name === 'heading' ? 'Heading' : "Write, or press '/' for blocks",
   }),
 ];

@@ -40,8 +40,10 @@ export const NotePage = () => {
   }
 
   return (
-    <article className="flex flex-col gap-6">
-      <header className="mx-auto flex w-full max-w-measure flex-col gap-4">
+    // One container for the whole note, so the title, the rule and the prose
+    // share a single left and right edge instead of each computing its own.
+    <article className="mx-auto flex w-full max-w-measure flex-col gap-2">
+      <header className="flex flex-col gap-4">
         <Link
           to={`/studyspace/${note.studyspace}`}
           className="font-heading text-xs uppercase tracking-[0.14em] text-muted hover:text-ink"

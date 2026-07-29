@@ -3,17 +3,17 @@ import { useEffect, useRef } from 'react';
 import { cn } from '../../../components/ui/cn';
 import { noteExtensions } from '../editorExtensions';
 import { useNoteAutosave } from '../hooks/useNoteAutosave';
+import { toEditorContent } from '../noteDocument';
+import { SlashCommand } from '../slashCommand';
 import type { NoteDocument } from '../types';
-import { EditorToolbar } from './EditorToolbar';
+import { FormatBubbleMenu } from './FormatBubbleMenu';
 import { SaveIndicator } from './SaveIndicator';
 
 /**
- * Note.content defaults to `{}` on the backend, and a never-edited note still
- * carries that. TipTap rejects it — an object without `type` is not a document
- * — so it has to become `undefined` and let the schema build the empty doc.
+ * `noteExtensions` stays the schema contract; SlashCommand is appended here
+ * because it is UI, not document shape. See the note in slashCommand.ts.
  */
-const toEditorContent = (content: NoteDocument | null | undefined) =>
-  content && typeof content === 'object' && 'type' in content ? content : undefined;
+const editorExtensions = [...noteExtensions, SlashCommand];
 
 interface BlockEditorProps {
   noteId: number;
@@ -47,20 +47,22 @@ export const BlockEditor = ({
 
   const editor = useEditor(
     {
-      extensions: noteExtensions,
+      extensions: editorExtensions,
       content: toEditorContent(initialContent),
       editable,
-      // The toolbar subscribes to what it needs through `useEditorState`;
+      // The bubble menu subscribes to what it needs through `useEditorState`;
       // re-rendering this tree on every transaction would re-render the whole
       // document for a cursor move.
       shouldRerenderOnTransaction: false,
       editorProps: {
         attributes: {
+          // No horizontal padding: the page owns the measure, and any inset
+          // here would push the prose off the heading's left edge.
           class: cn(
             'prose prose-note max-w-none focus:outline-none',
             // Clicking the empty space below the last paragraph should land the
             // caret in the document, the way it does in a real page.
-            'min-h-[60vh] px-6 py-10',
+            'min-h-[60vh] py-6',
           ),
         },
       },
@@ -77,14 +79,17 @@ export const BlockEditor = ({
   if (!editor) return null;
 
   return (
-    <div className={cn('mx-auto w-full max-w-measure', className)}>
-      {/* Translucent and sticky so the prose scrolls under the controls
-          instead of the controls ever covering the line being written. */}
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-rule bg-page/85 px-4 py-1.5 backdrop-blur-sm">
-        <EditorToolbar editor={editor} />
+    // Width and centring belong to the page, not here: when this owned its own
+    // measure it drifted out of line with the note title above it.
+    <div className={cn('w-full', className)}>
+      {/* No formatting bar: blocks come from `/` and marks from the selection,
+          so the only persistent chrome is the save state. Translucent and
+          sticky so the prose scrolls under it and stays legible. */}
+      <div className="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm">
         <SaveIndicator status={status} />
       </div>
 
+      <FormatBubbleMenu editor={editor} />
       <EditorContent editor={editor} />
     </div>
   );
