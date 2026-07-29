@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Button, cn } from '../components/ui';
+import { StudyspaceNav } from '../components/StudyspaceNav';
 import { useAuthStore } from '../features/auth/store/authStore';
 import { useThemeStore } from '../store/themeStore';
 
@@ -57,7 +58,9 @@ export const AppLayout = () => {
 
       <div className="flex flex-1 flex-col gap-8 md:flex-row">
         {/* Barra lateral de navegación (Sidebar) */}
-        <aside className="border-b border-rule px-6 py-6 md:w-56 md:shrink-0 md:border-b-0 md:border-r">
+        {/* Scrolls on its own once a studyspace has enough notes to outgrow the
+            viewport, instead of stretching the page. */}
+        <aside className="scrollbar-slim flex flex-col gap-6 border-b border-rule px-6 py-6 md:sticky md:top-0 md:max-h-dvh md:w-60 md:shrink-0 md:overflow-y-auto md:border-b-0 md:border-r">
           <nav>
             <ul className="flex flex-col gap-1">
               <li>
@@ -71,13 +74,13 @@ export const AppLayout = () => {
                   Create Studyspace
                 </NavLink>
               </li>
-              <li>
-                <NavLink to="/profile" className={navLinkClasses}>
-                  Profile
-                </NavLink>
-              </li>
+              {/* Profile lives in the header. Repeating it here spent a sidebar
+                  row on something you reach twice a month. */}
             </ul>
           </nav>
+
+          {/* Only renders inside a studyspace; see StudyspaceNav. */}
+          <StudyspaceNav />
         </aside>
 
         {/* Área donde cambia el contenido según la URL */}
@@ -86,9 +89,9 @@ export const AppLayout = () => {
         </main>
       </div>
 
-      <footer className="border-t border-rule px-6 py-4">
+      {/* <footer className="border-t border-rule px-6 py-4">
         <p className="text-xs text-muted">© 2026 Studyspace</p>
-      </footer>
+      </footer> */}
     </div>
   );
 };

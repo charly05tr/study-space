@@ -84,6 +84,13 @@ export const BlockEditor = ({
       shouldRerenderOnTransaction: false,
       editorProps: {
         attributes: {
+          /**
+           * Study notes are full of proper nouns, code, and whatever language
+           * the source is in. The browser's dictionary knows none of it, so the
+           * red underlines are noise on almost every line — and noise that
+           * looks like an error is worse than no signal at all.
+           */
+          spellcheck: 'false',
           // No horizontal padding: the page owns the measure, and any inset
           // here would push the prose off the heading's left edge.
           class: cn(
