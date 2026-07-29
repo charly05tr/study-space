@@ -1,3 +1,4 @@
+import { NodeSelection, Selection } from '@tiptap/pm/state';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../../components/ui/cn';
@@ -102,6 +103,32 @@ export const BlockEditor = ({
           ),
         },
       },
+      /**
+       * A note must not open with a block already selected.
+       *
+       * ProseMirror seeds the state with `Selection.atStart`, which looks for a
+       * text position and settles for a NodeSelection when it cannot find one.
+       * A note whose first block is an atom — an embedded annotation — gives it
+       * nothing to land on, so the card came up highlighted before the reader
+       * had touched anything.
+       *
+       * Nudged to the nearest text position instead. The transaction changes no
+       * content, and Tiptap only emits `update` when the document actually
+       * changed, so this cannot trip the autosave on load.
+       *
+       * `Selection.findFrom` with textOnly, NOT `TextSelection.near`: that name
+       * is inherited straight from `Selection` — TextSelection defines no `near`
+       * of its own — so it happily hands back the very NodeSelection being
+       * replaced.
+       */
+      onCreate: ({ editor: instance }) => {
+        const { state } = instance;
+        if (!(state.selection instanceof NodeSelection)) return;
+
+        const text = Selection.findFrom(state.doc.resolve(state.selection.from), 1, true);
+        if (text) instance.view.dispatch(state.tr.setSelection(text));
+      },
+
       /**
        * `getJSON()` and not `getHTML()`: the JSON tree is the only form that
        * still carries `attrs.id` per block. HTML would flatten it to a `data-id`

@@ -54,7 +54,6 @@ export const GraphSection = ({ studyspaceId }: GraphSectionProps) => {
               <span className="mr-2 font-heading text-[0.6rem] uppercase tracking-[0.14em]">
                 {focused.note_title}
               </span>
-              <span className="text-ink italic">{focused.text || '(empty block)'}</span>
             </>
           ) : (
             'Drag to turn it. Pick a block to light up what it connects to.'

@@ -66,6 +66,16 @@ export const GraphScene = ({
       20,
     );
     camera.position.set(0, 0, radius * 2.4);
+    camera.lookAt(0, 0, 0);
+    /**
+     * Raycasting reads the camera's world matrix, and moving `position` alone
+     * does not refresh it. Until something else recomputed it — an orbit drag,
+     * a resize — clicks were being tested against where the camera used to be,
+     * so they landed on nothing. `controls.update()` would do it too, but only
+     * if the ref is already attached, which is not something to depend on.
+     */
+    camera.updateMatrixWorld();
+
     controls.current?.target.set(0, 0, 0);
     controls.current?.update();
   }, [layout, nodeSignature, camera]);
