@@ -14,6 +14,8 @@ from apps.studyspace.api.views import (
     NoteViewSet,
     SourceViewSet,
     AnnotationViewSet,
+    BlockViewSet,
+    BlockLinkViewSet,
 )
 from apps.studyspace.views import pdf_to_html_view, source_html_view
 
@@ -23,6 +25,8 @@ router.register(r'studyspaces', StudyspaceViewSet, basename='studyspaces')
 router.register(r'notes', NoteViewSet, basename='notes')
 router.register(r'sources', SourceViewSet, basename='sources')
 router.register(r'annotations', AnnotationViewSet, basename='annotations')
+router.register(r'blocks', BlockViewSet, basename='blocks')
+router.register(r'block-links', BlockLinkViewSet, basename='block-links')
 
 urlpatterns = [
     path('', TemplateView.as_view(template_name='index.html'), name='home'),

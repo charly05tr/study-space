@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response 
 from apps.core.adapters.cloudinary_adapter import CloudinaryAdapter
 from apps.studyspace.services.studyspace_service import StudyspaceService
-from apps.studyspace.api.filters import AnnotationFilter
+from apps.studyspace.api.filters import AnnotationFilter, BlockFilter, BlockLinkFilter
 from apps.studyspace.api.serializers import *
 from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.source_service import SourceService
@@ -268,3 +268,74 @@ class SourceViewSet(viewsets.ModelViewSet):
             'reader_html': reader_html
         }, status=status.HTTP_200_OK)
         
+
+class BlockViewSet(viewsets.ReadOnlyModelViewSet):
+    """Solo lectura: los bloques nacen del documento, nunca de la API.
+
+    Escribir uno aca lo pondria en desacuerdo con Note.content hasta el proximo
+    guardado, que lo revertiria sin avisar.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = BlockSerializer
+    filterset_class = BlockFilter
+    # El buscador de `[[` necesita la lista completa de coincidencias, no una
+    # pagina: navega con flechas y descarta a medida que escribe.
+    pagination_class = None
+
+    # Techo duro. Sin `q`, un studyspace grande devolveria miles de filas para
+    # llenar un menu que muestra diez.
+    MAX_RESULTS = 50
+
+    def get_queryset(self):
+        return (
+            Block.objects
+            .filter(note__studyspace__user=self.request.user, deleted_at__isnull=True)
+            .select_related('note')
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())[:self.MAX_RESULTS]
+        return Response(self.get_serializer(queryset, many=True).data)
+
+
+class BlockLinkViewSet(viewsets.ModelViewSet):
+    """Las aristas del mapa conceptual.
+
+    Solo administra las de origin=graph. Las escritas con `[[` las gobierna el
+    documento: borrarlas aca las devolveria el proximo guardado de la nota.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = BlockLinkSerializer
+    filterset_class = BlockLinkFilter
+    pagination_class = None
+
+    def get_queryset(self):
+        return (
+            BlockLink.objects
+            .filter(source__note__studyspace__user=self.request.user)
+            .select_related('source', 'target')
+        )
+
+    def _owned_blocks(self):
+        return Block.objects.filter(note__studyspace__user=self.request.user)
+
+    def perform_create(self, serializer):
+        # Sin esto se podria relacionar el bloque de otra cuenta pasando su id:
+        # get_queryset filtra la lectura, no la escritura. Mismo guard que
+        # AnnotationViewSet y NoteViewSet.
+        owned = self._owned_blocks()
+        for end in ('source', 'target'):
+            block = serializer.validated_data[end]
+            if not owned.filter(pk=block.pk).exists():
+                raise ValidationError(f"El bloque de {end} no existe o no te pertenece.")
+
+        # El origen lo decide el servidor: una arista creada por esta API se
+        # dibujo en el mapa, y marcarla como inline la borraria el sync.
+        serializer.save(origin=BlockLink.Origin.GRAPH)
+
+    def perform_destroy(self, instance):
+        if instance.origin == BlockLink.Origin.INLINE:
+            raise ValidationError(
+                "Esa relacion esta escrita en la nota. Borrala desde el texto."
+            )
+        instance.delete()

@@ -23,12 +23,25 @@ INDEXED_TYPES = frozenset({
 })
 
 
+# Nodo inline que el editor inserta al escribir `[[`. No es un bloque: vive
+# DENTRO de uno, y es lo que convierte una mencion escrita en una arista.
+LINK_NODE_TYPE = 'blockLink'
+
+
 @dataclass(frozen=True)
 class ExtractedBlock:
     id: str
     block_type: str
     text: str
     position: int
+
+
+@dataclass(frozen=True)
+class ExtractedLink:
+    """Una arista escrita en el texto. El origen es el bloque que la contiene."""
+    source_id: str
+    target_id: str
+    kind: str
 
 
 def _node_text(node: dict) -> str:
@@ -77,14 +90,53 @@ def extract_blocks(content: dict) -> list[ExtractedBlock]:
     return blocks
 
 
-def blocks_fingerprint(blocks: list[ExtractedBlock]) -> str:
+def extract_links(content: dict) -> list[ExtractedLink]:
+    """Las mencions `[[` del documento, atribuidas al bloque que las contiene.
+
+    Se queda con el bloque indexado MAS INTERNO: un parrafo dentro de un item de
+    lista es el origen razonable de la arista; la lista entera no dice nada.
+    """
+    links: list[ExtractedLink] = []
+
+    def walk(node: dict, enclosing_id: str | None) -> None:
+        block_id = (node.get('attrs') or {}).get('id')
+        node_type = node.get('type')
+
+        if node_type in INDEXED_TYPES and block_id:
+            enclosing_id = str(block_id)
+
+        if node_type == LINK_NODE_TYPE and enclosing_id:
+            attrs = node.get('attrs') or {}
+            target_id = attrs.get('targetId')
+            if target_id:
+                links.append(ExtractedLink(
+                    source_id=enclosing_id,
+                    target_id=str(target_id),
+                    kind=attrs.get('kind') or BlockLink.Kind.RELATES,
+                ))
+
+        for child in node.get('content') or []:
+            walk(child, enclosing_id)
+
+    if isinstance(content, dict):
+        walk(content, None)
+
+    return links
+
+
+def blocks_fingerprint(blocks: list[ExtractedBlock], links: list[ExtractedLink]) -> str:
     """Huella estable del conjunto de bloques, no del documento entero.
 
     Se calcula sobre lo que el indice guarda. Un cambio de formato que no altere
     ni el texto ni el orden no dispara reindexado.
     """
     payload = json.dumps(
-        [[block.id, block.block_type, block.text, block.position] for block in blocks],
+        {
+            'blocks': [[b.id, b.block_type, b.text, b.position] for b in blocks],
+            # Las aristas entran en la huella: cambiar solo el tipo de una
+            # relacion no mueve ningun bloque, y sin esto no se reindexaria.
+            'links': sorted([link.source_id, link.target_id, link.kind] for link in links),
+        },
         ensure_ascii=False,
         separators=(',', ':'),
     )
@@ -100,8 +152,10 @@ class BlockIndexService:
 
     def sync(self, note: Note, *, force: bool = False) -> bool:
         """Devuelve True si hubo algo que escribir."""
-        blocks = extract_blocks(note.content or {})
-        fingerprint = blocks_fingerprint(blocks)
+        content = note.content or {}
+        blocks = extract_blocks(content)
+        links = extract_links(content)
+        fingerprint = blocks_fingerprint(blocks, links)
 
         if not force and fingerprint == note.blocks_hash:
             return False
@@ -109,6 +163,9 @@ class BlockIndexService:
         with transaction.atomic():
             self._upsert(note, blocks)
             self._retire_missing(note, {block.id for block in blocks})
+            # Despues de los bloques: una arista recien escrita puede apuntar a
+            # un bloque que se creo en este mismo guardado.
+            self._reconcile_inline_links(note, links)
 
             note.blocks_hash = fingerprint
             # update_fields para no pisar content con la copia en memoria si el
@@ -116,6 +173,57 @@ class BlockIndexService:
             note.save(update_fields=['blocks_hash'])
 
         return True
+
+    def _reconcile_inline_links(self, note: Note, links: list[ExtractedLink]) -> None:
+        """El documento manda sobre las aristas escritas en el, y solo sobre esas.
+
+        Filtra por origin=INLINE a proposito: las relaciones dibujadas en el mapa
+        no viven en el JSON, asi que reconciliar contra el documento las borraria
+        todas en el primer guardado.
+        """
+        desired = {(link.source_id, link.target_id, link.kind) for link in links}
+
+        current = BlockLink.objects.filter(
+            source__note=note,
+            origin=BlockLink.Origin.INLINE,
+        )
+        current_keys = {
+            (str(link.source_id), str(link.target_id), link.kind) for link in current
+        }
+
+        removed = current_keys - desired
+        if removed:
+            for source_id, target_id, kind in removed:
+                current.filter(source_id=source_id, target_id=target_id, kind=kind).delete()
+
+        missing = desired - current_keys
+        if not missing:
+            return
+
+        # Un objetivo puede no existir todavia: la nota de destino podria no
+        # haberse indexado nunca. Se omite en vez de reventar, y la arista
+        # aparece sola en el proximo guardado.
+        known = set(
+            Block.objects
+            .filter(pk__in={target for _, target, _ in missing})
+            .values_list('pk', flat=True)
+        )
+        known = {str(block_id) for block_id in known}
+
+        BlockLink.objects.bulk_create(
+            [
+                BlockLink(
+                    source_id=source_id,
+                    target_id=target_id,
+                    kind=kind,
+                    origin=BlockLink.Origin.INLINE,
+                )
+                for source_id, target_id, kind in missing
+                if target_id in known and target_id != source_id
+            ],
+            # Una misma arista puede estar escrita dos veces en el texto.
+            ignore_conflicts=True,
+        )
 
     def _upsert(self, note: Note, blocks: list[ExtractedBlock]) -> None:
         existing = {str(block.pk): block for block in Block.objects.filter(note=note)}

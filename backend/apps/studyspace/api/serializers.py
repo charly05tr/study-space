@@ -1,5 +1,7 @@
 from rest_framework import serializers
-from apps.studyspace.models import Studyspace, Note, Source, NoteImage, Annotation, Reference
+from apps.studyspace.models import (
+    Studyspace, Note, Source, NoteImage, Annotation, Reference, Block, BlockLink,
+)
 
 
 class StudyspaceCreateUpdateSerializer(serializers.ModelSerializer):
@@ -214,3 +216,35 @@ class SourceProgressUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Source
         fields = ['last_position', 'last_anchor']
+
+class BlockSerializer(serializers.ModelSerializer):
+    """Lo que el buscador de `[[` necesita para mostrar un bloque.
+
+    Incluye el titulo de la nota porque un fragmento de texto suelto no dice de
+    donde viene, y relacionar ideas ENTRE notas es el punto del grafo.
+    """
+    note_title = serializers.CharField(source='note.title', read_only=True)
+    studyspace = serializers.IntegerField(source='note.studyspace_id', read_only=True)
+
+    class Meta:
+        model = Block
+        fields = ['id', 'note', 'note_title', 'studyspace', 'block_type', 'text', 'position']
+
+
+class BlockLinkSerializer(serializers.ModelSerializer):
+    source_text = serializers.CharField(source='source.text', read_only=True)
+    target_text = serializers.CharField(source='target.text', read_only=True)
+    # El grafo tiene que poder dibujar una arista huerfana distinta: apunta a un
+    # bloque que ya no esta en ninguna nota.
+    target_orphan = serializers.BooleanField(source='target.is_orphan', read_only=True)
+
+    class Meta:
+        model = BlockLink
+        fields = [
+            'id', 'source', 'target', 'source_text', 'target_text', 'target_orphan',
+            'kind', 'origin', 'note', 'created_at',
+        ]
+        # Las aristas escritas en el texto las gobierna el documento: dejarlas
+        # editar por la API las pondria en desacuerdo con el JSON hasta el
+        # proximo guardado, que las revertiria sin avisar.
+        read_only_fields = ['id', 'origin', 'created_at']
