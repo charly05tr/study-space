@@ -60,7 +60,7 @@ export const AppLayout = () => {
         {/* Barra lateral de navegación (Sidebar) */}
         {/* Scrolls on its own once a studyspace has enough notes to outgrow the
             viewport, instead of stretching the page. */}
-        <aside className="scrollbar-slim flex flex-col gap-6 border-b border-rule px-6 py-6 md:sticky md:top-0 md:max-h-dvh md:w-60 md:shrink-0 md:overflow-y-auto md:border-b-0 md:border-r">
+        <aside className="flex flex-col gap-6 border-b border-rule px-6 py-6 md:sticky md:top-0 md:max-h-dvh md:w-60 md:shrink-0 md:overflow-y-auto md:border-b-0 md:border-r">
           <nav>
             <ul className="flex flex-col gap-1">
               <li>

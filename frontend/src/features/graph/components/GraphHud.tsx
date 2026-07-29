@@ -81,7 +81,7 @@ export const GraphHud = ({
           />
 
           {results.length > 0 && (
-            <ul className="scrollbar-slim mt-1 max-h-64 overflow-y-auto border-t border-rule pt-1">
+            <ul className="mt-1 max-h-64 overflow-y-auto border-t border-rule pt-1">
               {results.map((node) => (
                 <li key={node.id}>
                   <button
@@ -195,7 +195,7 @@ export const GraphHud = ({
               {focused.orphan && ' · no longer in the note'}
             </p>
 
-            <p className="mt-1 max-h-32 overflow-y-auto font-body text-sm text-ink italic scrollbar-slim">
+            <p className="mt-1 max-h-32 overflow-y-auto font-body text-sm text-ink italic">
               {focused.text || '(empty block)'}
             </p>
 

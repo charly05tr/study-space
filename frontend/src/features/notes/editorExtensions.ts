@@ -10,10 +10,16 @@ import { BlockLinkNode } from './blockLinkNode';
 /**
  * Block types that receive a stable `id` attribute.
  *
- * This list is the contract with the future 3D map. Anything named here becomes
- * addressable on its own — a row in a `NoteBlock` table, a node in the graph.
- * Anything left out is only reachable by walking its parent's JSON, so adding a
- * type later is cheap but removing one orphans every edge that pointed at it.
+ * This list is the contract with the map: anything named here is addressable,
+ * anything left out is only reachable by walking its parent's JSON. Adding a
+ * type later is cheap; removing one orphans every edge that pointed at it.
+ *
+ * It is deliberately WIDER than what the backend actually turns into graph
+ * nodes. `INDEXED_TYPES` in block_service.py starts from this same set and then
+ * drops two kinds of noise: blocks with no text, and containers that hold
+ * another indexed block. A list keeps its id here — cheap, and stable if we
+ * ever want to address the group — while the map draws one node per bullet
+ * rather than one per bullet, per item and per list.
  *
  * `listItem` is in on purpose: a concept map links to a single bullet, not to
  * the whole list. The list containers keep ids too so a link can target the

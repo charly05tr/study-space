@@ -8,6 +8,7 @@ interface GraphCanvasProps {
   focusedId: string | null;
   showEdges?: boolean;
   onPick: (id: string | null) => void;
+  onNodeMenu?: (id: string, x: number, y: number) => void;
 }
 
 export const GraphCanvas = ({
@@ -15,6 +16,8 @@ export const GraphCanvas = ({
   focusedId,
   showEdges = true,
   onPick,
+  // The embedded section stays read-only; only the full map offers actions.
+  onNodeMenu = () => {},
 }: GraphCanvasProps) => {
   const palette = useGraphPalette();
 
@@ -36,6 +39,7 @@ export const GraphCanvas = ({
         focusedId={focusedId}
         showEdges={showEdges}
         onPick={onPick}
+        onNodeMenu={onNodeMenu}
       />
     </Canvas>
   );

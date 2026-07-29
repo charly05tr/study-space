@@ -133,7 +133,7 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
         ref={listRef}
         role="listbox"
         aria-label="Insert block"
-        className="scrollbar-slim max-h-72 w-72 overflow-y-auto rounded-xs border border-rule bg-page py-1 shadow-sm"
+        className="max-h-72 w-72 overflow-y-auto rounded-xs border border-rule bg-page py-1 shadow-sm"
       >
         {items.map((item, index) => (
           <li key={item.key}>

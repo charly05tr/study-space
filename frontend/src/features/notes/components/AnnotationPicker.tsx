@@ -136,7 +136,7 @@ export const AnnotationPicker = ({
               : 'No annotation matches that search.'}
           </p>
         ) : (
-          <ul ref={listRef} role="listbox" className="scrollbar-slim flex-1 overflow-y-auto p-2">
+          <ul ref={listRef} role="listbox" className="flex-1 overflow-y-auto p-2">
             {results.map((annotation, index) => (
               <li key={annotation.id}>
                 <button

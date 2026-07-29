@@ -167,7 +167,7 @@ export const BlockLinkMenu = forwardRef<BlockLinkMenuHandle, BlockLinkMenuProps>
     return (
       <div
         ref={listRef}
-        className="scrollbar-slim max-h-80 w-80 overflow-y-auto rounded-xs border border-rule bg-page py-1 shadow-sm"
+        className="max-h-80 w-80 overflow-y-auto rounded-xs border border-rule bg-page py-1 shadow-sm"
       >
         <p className="flex items-baseline justify-between gap-2 px-3 pt-1 pb-1 font-heading text-[0.65rem] uppercase tracking-[0.16em] text-muted/70">
           <span>{picked ? 'How does it relate?' : 'Link to a block'}</span>

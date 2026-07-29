@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { EmptyState, ErrorState, Loading, useNotification } from '../../../components/ui';
 import { useCreateBlockLink, useDeleteBlockLink } from '../../blocks/hooks/useBlockLinkMutations';
+import { useSetBlockExcluded } from '../../blocks/hooks/useBlockVisibility';
 import type { RelationKind } from '../../blocks/types';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import { GraphCanvas } from '../components/GraphCanvas';
 import { GraphHud } from '../components/GraphHud';
+import { NodeMenu, type NodeMenuTarget } from '../components/NodeMenu';
 import { useGraphLayout } from '../hooks/useGraphLayout';
 import { relationsOf } from '../relations';
 import type { Connecting } from '../types';
@@ -23,10 +25,13 @@ export const GraphPage = () => {
   /** Which row of the relation list the arrow keys are sitting on. */
   const [relationIndex, setRelationIndex] = useState(0);
 
+  const [menu, setMenu] = useState<NodeMenuTarget | null>(null);
+
   const relations = useMemo(() => relationsOf(layout, focusedId), [layout, focusedId]);
 
   const createLink = useCreateBlockLink(id);
   const deleteLink = useDeleteBlockLink(id);
+  const setExcluded = useSetBlockExcluded(id);
 
   /** Where the walk came from, so Escape retraces it instead of just clearing. */
   const trail = useRef<string[]>([]);
@@ -69,6 +74,42 @@ export const GraphPage = () => {
           notify({
             variant: 'error',
             title: 'Could not connect them',
+            message: getApiErrorMessage(mutationError),
+          }),
+      },
+    );
+  };
+
+  const openNodeMenu = useCallback(
+    (nodeId: string, x: number, y: number) => {
+      const node = layout.byId.get(nodeId);
+      if (node) setMenu({ node, x, y });
+    },
+    [layout],
+  );
+
+  const removeFromMap = () => {
+    if (!menu) return;
+    const nodeId = menu.node.id;
+
+    setExcluded.mutate(
+      { blockId: nodeId, excluded: true },
+      {
+        onSuccess: () => {
+          setMenu(null);
+          // Leaving the focus on a node that is no longer drawn would keep
+          // its panel open over an empty patch of space.
+          if (focusedId === nodeId) setFocusedId(null);
+          notify({
+            variant: 'success',
+            title: 'Taken off the map',
+            message: 'The block is still in its note.',
+          });
+        },
+        onError: (mutationError) =>
+          notify({
+            variant: 'error',
+            title: 'Could not remove it',
             message: getApiErrorMessage(mutationError),
           }),
       },
@@ -209,6 +250,7 @@ export const GraphPage = () => {
         focusedId={connecting?.sourceId ?? focusedId}
         showEdges={showEdges}
         onPick={pick}
+        onNodeMenu={openNodeMenu}
       />
       <GraphHud
         layout={layout}
@@ -227,6 +269,15 @@ export const GraphPage = () => {
         showEdges={showEdges}
         onToggleEdges={() => setShowEdges((visible) => !visible)}
       />
+
+      {menu && (
+        <NodeMenu
+          target={menu}
+          removing={setExcluded.isPending}
+          onRemove={removeFromMap}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 };

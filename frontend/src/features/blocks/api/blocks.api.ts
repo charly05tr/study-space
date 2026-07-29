@@ -16,4 +16,15 @@ export const blocksApi = {
     });
     return response.data;
   },
+
+  /**
+   * Hides a block from the map, or brings it back.
+   *
+   * The only writable field on a block. Its text and type come from the note
+   * and the next save would revert anything written here — this one the sync
+   * deliberately leaves alone, which is what lets the choice stick.
+   */
+  setExcluded: async (blockId: string, excluded: boolean): Promise<void> => {
+    await axios.patch(`${BASE_URL}/${blockId}/`, { excluded_from_map: excluded });
+  },
 };

@@ -163,37 +163,47 @@
 }
 
 /*
-  Slim scrollbar for menus and panels.
+  Slim scrollbars, everywhere.
 
-  Two declarations, not one: `scrollbar-width` is the standard and is all
-  Firefox understands, while Chromium and Safari still only honour the
-  ::-webkit-scrollbar pseudo-elements. Neither is redundant.
+  Global rather than an opt-in utility: a scrollbar is chrome the browser adds
+  on its own, so styling it per component means the default one reappears at
+  whatever surface was forgotten — which is exactly how the app's own page and
+  the reader's notes panel ended up looking like a different product.
+
+  Two declarations, not one. `scrollbar-width`/`scrollbar-color` are the
+  standard and all Firefox understands; Chromium and Safari still only honour
+  the ::-webkit-scrollbar pseudo-elements. Neither is redundant.
 
   The track stays transparent so the bar reads as part of the paper rather than
   as a chrome gutter, and the thumb uses the rule colour, which already flips
   with the theme.
 */
-@utility scrollbar-slim {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-rule) transparent;
+@layer base {
+  /* Both are inherited properties, so the root covers every scroller. */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-rule) transparent;
+  }
 
-  &::-webkit-scrollbar {
+  *::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
 
-  &::-webkit-scrollbar-track {
+  *::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  &::-webkit-scrollbar-thumb {
+  *::-webkit-scrollbar-thumb {
     background-color: var(--color-rule);
-    /* Fully round, and inset from the edge so it never touches the border. */
+    /* Fully round, so it never reads as a panel edge. */
     border-radius: 999px;
   }
 
-  /* Only on hover: at rest the bar should be barely there. */
-  &:hover::-webkit-scrollbar-thumb {
+  /* The thumb itself, not the element around it: at rest the bar should be
+     barely there, and an element-level hover would keep the page's own bar
+     darkened the whole time the pointer is in the window. */
+  *::-webkit-scrollbar-thumb:hover {
     background-color: var(--color-muted);
   }
 }

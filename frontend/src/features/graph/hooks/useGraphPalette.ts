@@ -24,21 +24,34 @@ const getSnapshot = (): GraphPalette => {
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
 
-  observer ??= new MutationObserver(() => {
+  // Captured locally: the cleanup runs later, when the module-level binding
+  // may already have been cleared by another subscriber leaving.
+  const active = (observer ??= new MutationObserver(() => {
     snapshot = readPalette();
     for (const notify of listeners) notify();
-  });
-  observer.observe(document.documentElement, {
+  }));
+
+  active.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-theme', 'class', 'style'],
   });
 
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) {
-      observer?.disconnect();
-      observer = null;
-    }
+    if (listeners.size > 0) return;
+
+    active.disconnect();
+    observer = null;
+
+    /**
+     * Throw the cached palette away along with the observer.
+     *
+     * The two have to end together. Keeping the snapshot while nothing is
+     * watching meant a theme switched anywhere else in the app went unnoticed,
+     * and the next visit to the map was served the colours from the previous
+     * one — the scene came back painted for the old theme.
+     */
+    snapshot = null;
   };
 };
 

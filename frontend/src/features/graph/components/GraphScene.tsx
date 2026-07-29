@@ -14,6 +14,7 @@ interface GraphSceneProps {
   focusedId: string | null;
   showEdges: boolean;
   onPick: (id: string | null) => void;
+  onNodeMenu: (id: string, x: number, y: number) => void;
 }
 
 /** Anything further than this from the focus stays a point, not a word. */
@@ -27,6 +28,7 @@ export const GraphScene = ({
   focusedId,
   showEdges,
   onPick,
+  onNodeMenu,
 }: GraphSceneProps) => {
   const { camera } = useThree();
   // Typed off the component rather than reaching into three-stdlib: the impl
@@ -147,6 +149,7 @@ export const GraphScene = ({
         hoveredId={hoveredId}
         onPick={onPick}
         onHover={setHoveredId}
+        onContextMenu={onNodeMenu}
       />
 
       {labelled.map((node) => (

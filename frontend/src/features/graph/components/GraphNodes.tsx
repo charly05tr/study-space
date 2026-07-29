@@ -11,6 +11,7 @@ interface GraphNodesProps {
   hoveredId: string | null;
   onPick: (id: string) => void;
   onHover: (id: string | null) => void;
+  onContextMenu: (id: string, x: number, y: number) => void;
 }
 
 const dummy = new THREE.Object3D();
@@ -34,6 +35,7 @@ export const GraphNodes = ({
   hoveredId,
   onPick,
   onHover,
+  onContextMenu,
 }: GraphNodesProps) => {
   const mesh = useRef<THREE.InstancedMesh>(null);
 
@@ -88,6 +90,15 @@ export const GraphNodes = ({
         event.stopPropagation();
         const index = event.instanceId;
         if (index !== undefined) onPick(layout.nodes[index].id);
+      }}
+      onContextMenu={(event) => {
+        const index = event.instanceId;
+        if (index === undefined) return;
+        event.stopPropagation();
+        // Suppresses the browser's own menu, which would otherwise cover this
+        // one; r3f only forwards the synthetic event.
+        event.nativeEvent.preventDefault();
+        onContextMenu(layout.nodes[index].id, event.nativeEvent.clientX, event.nativeEvent.clientY);
       }}
       // pointermove, not pointerover: one instanced mesh is a single object,
       // so moving between two nodes never fires over/out and the label would
