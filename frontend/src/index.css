@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+/* Tailwind v4 loads plugins from CSS — there is no tailwind.config.js here. */
+@plugin '@tailwindcss/typography';
+
 /*
   Design tokens. Everything declared inside @theme becomes both a CSS variable
   and a Tailwind utility (--color-page -> bg-page / text-page / border-page).
@@ -121,5 +124,61 @@
   :focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+  }
+}
+
+/*
+  Note editor prose.
+
+  `prose` ships its own grey ramp, which fights the sepia paper and does not
+  flip with the dark theme. Every colour it uses is a --tw-prose-* variable, so
+  re-pointing them at the design tokens is enough — no per-element overrides,
+  and dark mode comes along for free because the tokens already flip.
+
+  Declared as @utility rather than a plain class so it lands in the utilities
+  layer and outranks the plugin's own component-layer defaults.
+*/
+@utility prose-note {
+  /* prose hardcodes 1rem/1.75. Inheriting keeps the app's 19px reading size,
+     and the em-based heading scale follows it. */
+  font-size: inherit;
+  line-height: inherit;
+
+  --tw-prose-body: var(--color-ink);
+  --tw-prose-headings: var(--color-ink);
+  --tw-prose-lead: var(--color-muted);
+  --tw-prose-links: var(--color-primary-ink);
+  --tw-prose-bold: var(--color-ink);
+  --tw-prose-counters: var(--color-muted);
+  --tw-prose-bullets: var(--color-primary);
+  --tw-prose-hr: var(--color-rule);
+  --tw-prose-quotes: var(--color-ink);
+  --tw-prose-quote-borders: var(--color-primary);
+  --tw-prose-captions: var(--color-muted);
+  --tw-prose-code: var(--color-ink);
+  --tw-prose-pre-code: var(--color-ink);
+  --tw-prose-pre-bg: var(--color-primary-50);
+  --tw-prose-th-borders: var(--color-rule);
+  --tw-prose-td-borders: var(--color-rule);
+}
+
+@layer components {
+  /*
+    Empty-block placeholder. Without it a blank note gives the writer nothing to
+    aim at, which is the one moment a blank page is hostile.
+
+    Two selectors, two moments: `is-empty` is set by Tiptap on the block holding
+    the cursor, `is-editor-empty` on the first block of a document with nothing
+    in it at all — so an untouched note reads as an invitation before it is even
+    focused.
+  */
+  .prose-note .is-empty::before,
+  .prose-note .is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: var(--color-muted);
+    opacity: 0.55;
   }
 }

@@ -1,8 +1,9 @@
+from datetime import timedelta
 from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from apps.users.models import User
-
+from django.utils import timezone
 
 """Un Studyspace es un espacio de estudio, el cual consiste en un tema especifico, 
    donde se reunen notas, fuentes, pomodoro, space repetition, y como tal cubre todo 
@@ -26,7 +27,7 @@ class Studyspace(models.Model):
 class Note(models.Model):
     # Data
     title = models.CharField(max_length=200)
-    content = models.TextField()
+    content = models.JSONField(default=dict)
     
     # Relations
     studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='notes')
@@ -159,3 +160,37 @@ class Reference(models.Model):
     
     studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='references')
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    
+class StudySession(models.Model):
+    # Relaciones
+    studyspace = models.ForeignKey('Studyspace', on_delete=models.CASCADE, related_name='study_sessions')
+    
+    # Metadatos
+    goal = models.CharField(max_length=255)
+    
+    # Configuración de la técnica (Pomodoro)
+    focus_time_duration = models.DurationField(default=timedelta(minutes=50))
+    rest_time_duration = models.DurationField(default=timedelta(minutes=10))
+    
+    # Progreso de la sesión
+    completed_pomodoros = models.PositiveIntegerField(default=0, help_text="Ciclos de focus completados exitosamente")
+    
+    # Trazabilidad temporal
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True) 
+
+    def __str__(self):
+        return f"Sesión: {self.goal} ({self.created_at.strftime('%Y-%m-%d')})"
+
+    @property
+    def is_active(self):
+        """Devuelve True si la sesión aún no ha sido marcada como finalizada."""
+        return self.finished_at is None
+
+    @property
+    def total_duration(self):
+        """Calcula el tiempo real invertido solo si la sesión ya terminó."""
+        if self.finished_at:
+            return self.finished_at - self.created_at
+        return timezone.now() - self.created_at

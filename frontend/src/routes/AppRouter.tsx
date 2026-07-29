@@ -17,6 +17,7 @@ import { StudyspacesPage } from '../features/studyspaces/pages/StudyspacesPage';
 import { CreateStudyspacePage } from '../features/studyspaces/pages/CreateStudyspacePage';
 import { StudyspaceDetailPage } from '../features/studyspaces/pages/StudyspaceDetailPage';
 import { ReaderPage } from '../features/reader/pages/ReaderPage';
+import { NotePage } from '../features/notes/pages/NotePage';
 
 export const router = createBrowserRouter([
   {
@@ -56,6 +57,9 @@ export const router = createBrowserRouter([
           // El detalle es un hub (sources, notes, references), no una vista de
           // lectura: va en AppLayout, no en ReaderLayout.
           { path: '/studyspace/:studyspaceId', element: <StudyspaceDetailPage /> },
+          // El editor es escritura, no lectura: va en AppLayout como el hub, no
+          // en ReaderLayout.
+          { path: '/note/:noteId', element: <NotePage /> },
           { path: '/profile', element: <DummyPage title="Profile" /> },
         ],
       },

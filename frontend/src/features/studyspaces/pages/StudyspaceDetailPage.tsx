@@ -11,6 +11,8 @@ import {
 } from '../../../components/ui';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import { formatDate } from '../../../lib/formatDate';
+import { AddNoteForm } from '../../notes/components/AddNoteForm';
+import { NoteRow } from '../../notes/components/NoteRow';
 import { AddSourceForm } from '../../sources/components/AddSourceForm';
 import { SourceRow } from '../../sources/components/SourceRow';
 import { DetailRow, DetailSection } from '../components/DetailSection';
@@ -31,6 +33,7 @@ export const StudyspaceDetailPage = () => {
   const id = Number(studyspaceId);
   // Declared above the early returns: hooks cannot run conditionally.
   const [addingSource, setAddingSource] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
   const { data: studyspace, isPending, isError, error, refetch } = useStudyspace(id);
 
   if (isPending) {
@@ -120,12 +123,18 @@ export const StudyspaceDetailPage = () => {
           title="Notes"
           count={studyspace.notes.length}
           emptyMessage="No notes written yet."
+          action={
+            <Button variant="quiet" size="sm" onClick={() => setAddingNote((open) => !open)}>
+              {addingNote ? 'Close' : 'Add note'}
+            </Button>
+          }
+          banner={
+            addingNote && <AddNoteForm studyspaceId={id} onDone={() => setAddingNote(false)} />
+          }
         >
           <ul>
             {studyspace.notes.map((note) => (
-              <DetailRow key={note.id}>
-                <span className="min-w-0 truncate text-ink">{note.title}</span>
-              </DetailRow>
+              <NoteRow key={note.id} note={note} />
             ))}
           </ul>
         </DetailSection>

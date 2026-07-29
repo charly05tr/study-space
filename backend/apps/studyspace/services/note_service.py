@@ -1,21 +1,25 @@
 from django.core.files.uploadedfile import UploadedFile
 from apps.core.adapters.cloudinary_adapter import CloudinaryAdapter
-from apps.users.models import User
 from apps.studyspace.models import Note, NoteImage, Studyspace
 
 
 class NoteService:
-    
+
     def __init__(self, image_service: CloudinaryAdapter):
             self.image=image_service
-            
+
     def get_user_notes(self, user):
-        return Note.objects.filter(user=user)
-    
-    def create_note(self, data: dict, user: User, studyspace: Studyspace, images: UploadedFile) -> Note:  
-        # Crear la note
-        note = Note.objects.create(**data, studyspace=studyspace, user=user)
-        
+        # Note no tiene FK a User: la pertenencia se hereda del studyspace.
+        # Es el mismo salto que hace SourceService.get_user_sources.
+        # El orden es explicito porque el ViewSet pagina, y paginar un queryset
+        # sin orden puede repetir o saltear filas entre paginas.
+        return Note.objects.filter(studyspace__user=user).order_by('-created_at')
+
+    def create_note(self, data: dict, studyspace: Studyspace, images: list[UploadedFile]) -> Note:
+        # Crear la note. El dueño no se pasa: lo define el studyspace, y la
+        # vista ya verifico que ese studyspace sea de quien hace el request.
+        note = Note.objects.create(**data, studyspace=studyspace)
+
         # Subir imagenes
         for image in images:
             url = self.image.upload(image=image)

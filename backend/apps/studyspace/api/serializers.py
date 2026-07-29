@@ -72,7 +72,11 @@ class NoteCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Note
-        fields = ['title', 'content', 'images']
+        # studyspace es obligatorio: sin el la note no tiene a donde pertenecer
+        # ni de quien heredar el dueño. La vista valida que sea del usuario.
+        # content queda opcional (el modelo tiene default=dict) porque una note
+        # nace vacia y se llena despues en el editor.
+        fields = ['title', 'content', 'studyspace', 'images']
         
             
 class NoteUpdateSerializer(serializers.ModelSerializer):

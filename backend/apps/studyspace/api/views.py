@@ -79,7 +79,8 @@ class NoteViewSet(viewsets.ModelViewSet):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.service = NoteService(image_service=CloudinaryAdapter)
-            
+        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+
     def get_queryset(self):
         user = self.request.user
         
@@ -108,16 +109,26 @@ class NoteViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data.copy()
         images = data.pop('images', [])
-        
-        note = self.service.create_note(data=data, user=request.user, images=images)
-        
+        studyspace = data.pop('studyspace')
+
+        # Sin esto se podria crear una note dentro del studyspace de otra cuenta
+        # pasando su id: get_queryset filtra la lectura, no la escritura. Mismo
+        # guard que AnnotationViewSet.perform_create.
+        owned = self.studyspace_service.get_user_studyspaces(user=request.user)
+        if not owned.filter(pk=studyspace.pk).exists():
+            raise ValidationError("El studyspace no existe o no te pertenece.")
+
+        note = self.service.create_note(data=data, studyspace=studyspace, images=images)
+
         return Response(NoteDetailSerializer(note).data, status=status.HTTP_201_CREATED)
-        
+
     def update(self, request, *args, **kwargs):
         partial = kwargs.get('partial', False)
         note = self.get_object()
-        
-        serializer = self.get_serializer(note=note, data=request.data, partial=partial)
+
+        # La instancia va posicional: `note=` no es un kwarg de serializer, DRF
+        # lo reenvia a Field.__init__ y todo PATCH moria con TypeError.
+        serializer = self.get_serializer(note, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
             
         data = serializer.validated_data.copy()
@@ -163,15 +174,29 @@ class SourceViewSet(viewsets.ModelViewSet):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.service = SourceService()
-    
+        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+
     def get_queryset(self):
         user = self.request.user
-        
+
         # Delegamos todo lo que tenga que ver con models
         qs = self.service.get_user_sources(user=user)
-            
+
         return qs
-        
+
+    def perform_create(self, serializer):
+        # Sin esto se podria subir un archivo al studyspace de otra cuenta
+        # pasando su id: get_queryset filtra la lectura, no la escritura.
+        # Mismo guard que AnnotationViewSet.perform_create y NoteViewSet.create.
+        studyspace = serializer.validated_data['study_space']
+        owned = self.studyspace_service.get_user_studyspaces(user=self.request.user)
+        if not owned.filter(pk=studyspace.pk).exists():
+            raise ValidationError("El studyspace no existe o no te pertenece.")
+
+        # save() y no create_source(): el titulo por defecto sale del nombre del
+        # archivo dentro de SourceCreateSerializer.create.
+        serializer.save()
+
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
             return SourceProgressUpdateSerializer
