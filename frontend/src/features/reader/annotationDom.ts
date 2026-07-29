@@ -1,13 +1,26 @@
-import type { AnchorRange } from '../annotations/types';
+import type { AnchorRange, AnnotationType } from '../annotations/types';
 
 export const BLOCK_SELECTOR = '[data-pagina][id]';
 export const MARK_CLASS = 'studyspace-mark';
 
-/** Nearest converted-document block that owns a node. */
-const blockOf = (node: Node | null): HTMLElement | null => {
-  const element = node instanceof Element ? node : (node?.parentElement ?? null);
-  return element?.closest<HTMLElement>(BLOCK_SELECTOR) ?? null;
+/**
+ * Element to start a `closest()` walk from.
+ *
+ * Checks `nodeType` rather than `instanceof Element`: these nodes come from the
+ * reader iframe, and that document has its own Element constructor, so an
+ * instanceof against this window's one is always false.
+ */
+const elementOf = (node: EventTarget | null): Element | null => {
+  const candidate = node as Node | null;
+  if (!candidate || typeof candidate.nodeType !== 'number') return null;
+  return candidate.nodeType === Node.ELEMENT_NODE
+    ? (candidate as Element)
+    : (candidate.parentElement ?? null);
 };
+
+/** Nearest converted-document block that owns a node. */
+const blockOf = (node: Node | null): HTMLElement | null =>
+  elementOf(node)?.closest<HTMLElement>(BLOCK_SELECTOR) ?? null;
 
 /** Ordered text nodes of a block, with the character offset each one starts at. */
 const textNodesOf = (block: Element): Array<{ node: Text; start: number }> => {
@@ -103,6 +116,7 @@ export const clearHighlights = (doc: Document) => {
 
 interface PaintTarget {
   annotationId: number;
+  annotationType: AnnotationType;
   range: AnchorRange;
 }
 
@@ -111,7 +125,7 @@ interface PaintTarget {
  * this must run after the frame has loaded and after any clearHighlights().
  */
 export const paintHighlights = (doc: Document, targets: PaintTarget[]) => {
-  targets.forEach(({ annotationId, range }) => {
+  targets.forEach(({ annotationId, annotationType, range }) => {
     const block = doc.getElementById(range.anchor);
     if (!block) return;
 
@@ -138,6 +152,7 @@ export const paintHighlights = (doc: Document, targets: PaintTarget[]) => {
       const mark = doc.createElement('mark');
       mark.className = MARK_CLASS;
       mark.dataset.annotationId = String(annotationId);
+      mark.dataset.annotationType = annotationType;
       try {
         domRange.surroundContents(mark);
       } catch {
@@ -146,6 +161,18 @@ export const paintHighlights = (doc: Document, targets: PaintTarget[]) => {
     });
   });
 };
+
+/** The painted note mark owning a node, if the node sits inside one. */
+export const noteMarkOf = (node: EventTarget | null): HTMLElement | null =>
+  elementOf(node)?.closest<HTMLElement>(`.${MARK_CLASS}[data-annotation-type="note"]`) ?? null;
+
+/**
+ * First painted mark of an annotation. The card is re-measured from it on
+ * scroll, and the pointer is long gone by then, so it is looked up by id
+ * rather than remembered as a node.
+ */
+export const markById = (doc: Document, annotationId: number): HTMLElement | null =>
+  doc.querySelector<HTMLElement>(`.${MARK_CLASS}[data-annotation-id="${annotationId}"]`);
 
 /** Scrolls to the block that owns an annotation. */
 export const scrollToAnchor = (doc: Document, anchor: string) => {

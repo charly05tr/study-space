@@ -57,6 +57,13 @@ export const readerCss = (mode: ReaderMode) => `
     cursor: pointer;
   }
 
+  /* A note carries text the highlight does not, so it has to look different
+     from a plain highlight for anyone to know there is something to hover. */
+  .${MARK_CLASS}[data-annotation-type="note"] {
+    text-decoration: underline dotted currentColor;
+    text-underline-offset: 0.25em;
+  }
+
   ${mode === 'focus' ? focusCss : freeCss}
 `;
 

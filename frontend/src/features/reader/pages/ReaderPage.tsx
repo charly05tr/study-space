@@ -10,11 +10,13 @@ import {
 import type { Annotation } from '../../annotations/types';
 import { AnnotationPanel } from '../components/AnnotationPanel';
 import { FocusControls } from '../components/FocusControls';
+import { NoteTooltip } from '../components/NoteTooltip';
 import { ReaderFrame } from '../components/ReaderFrame';
 import type { ReaderFrameHandle, SelectionInfo } from '../components/ReaderFrame';
 import { SelectionToolbar } from '../components/SelectionToolbar';
 import type { ReaderMode } from '../readerStyles';
 import { useThemeStore } from '../../../store/themeStore';
+import { useNoteCard } from '../hooks/useNoteCard';
 import { useReaderSource } from '../hooks/useReaderSource';
 import { useSaveProgress } from '../hooks/useSaveProgress';
 
@@ -42,6 +44,7 @@ export const ReaderPage = () => {
   const [mode, setMode] = useState<ReaderMode>('free');
   const [panelOpen, setPanelOpen] = useState(false);
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
+  const noteCard = useNoteCard();
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Single source of truth for paging. The frame renders whatever it is told.
@@ -180,6 +183,15 @@ export const ReaderPage = () => {
 
   const focused = mode === 'focus';
 
+  // Resolved against the live list, so a note deleted while shown cannot leave
+  // a card behind. A passing selection hides it, a pinned card outranks one.
+  const hoveredNote =
+    noteCard.hover && (noteCard.pinned || !selection)
+      ? (annotations ?? NO_ANNOTATIONS).find(
+          (annotation) => annotation.id === noteCard.hover?.annotationId,
+        )
+      : undefined;
+
   return (
     <div ref={shell} className="flex h-dvh flex-col bg-page">
       {!focused && (
@@ -247,6 +259,9 @@ export const ReaderPage = () => {
             annotations={annotations ?? NO_ANNOTATIONS}
             onAnchorChange={handleAnchorChange}
             onSelection={setSelection}
+            onNoteHover={noteCard.onFrameHover}
+            trackedNoteId={noteCard.hover?.annotationId ?? null}
+            onNoteMove={noteCard.onFrameMove}
             onPagesCounted={setTotalPages}
             onNavigate={handleNavigate}
           />
@@ -270,6 +285,17 @@ export const ReaderPage = () => {
           onPrevious={() => handleNavigate(-1)}
           onNext={() => handleNavigate(1)}
           onExit={exitFocus}
+        />
+      )}
+
+      {hoveredNote && noteCard.hover && (
+        <NoteTooltip
+          annotation={hoveredNote}
+          hover={noteCard.hover}
+          pinned={noteCard.pinned}
+          onPointerEnter={noteCard.onCardEnter}
+          onPointerLeave={noteCard.onCardLeave}
+          onClick={noteCard.onCardClick}
         />
       )}
 

@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   MARK_CLASS,
   clearHighlights,
+  noteMarkOf,
   paintHighlights,
   rangesFromSelection,
 } from './annotationDom';
-import type { AnchorRange } from '../annotations/types';
+import type { AnchorRange, AnnotationType } from '../annotations/types';
 
 /** Mirrors what pdf_service emits: pages of blocks carrying data-pagina + id. */
 const CONVERTED = `
@@ -100,8 +101,11 @@ describe('rangesFromSelection', () => {
 });
 
 describe('paintHighlights', () => {
-  const paint = (annotationId: number, range: AnchorRange) =>
-    paintHighlights(document, [{ annotationId, range }]);
+  const paint = (
+    annotationId: number,
+    range: AnchorRange,
+    annotationType: AnnotationType = 'highlight',
+  ) => paintHighlights(document, [{ annotationId, annotationType, range }]);
 
   it('wraps exactly the selected characters', () => {
     paint(1, { anchor: 'b-aaa', start: 4, end: 10 });
@@ -121,9 +125,9 @@ describe('paintHighlights', () => {
 
   it('paints several annotations in the same block without corrupting offsets', () => {
     paintHighlights(document, [
-      { annotationId: 1, range: { anchor: 'b-aaa', start: 0, end: 3 } },
-      { annotationId: 2, range: { anchor: 'b-aaa', start: 4, end: 10 } },
-      { annotationId: 3, range: { anchor: 'b-aaa', start: 16, end: 23 } },
+      { annotationId: 1, annotationType: 'highlight', range: { anchor: 'b-aaa', start: 0, end: 3 } },
+      { annotationId: 2, annotationType: 'highlight', range: { anchor: 'b-aaa', start: 4, end: 10 } },
+      { annotationId: 3, annotationType: 'note', range: { anchor: 'b-aaa', start: 16, end: 23 } },
     ]);
 
     const texts = Array.from(document.querySelectorAll(`.${MARK_CLASS}`)).map(
@@ -135,8 +139,8 @@ describe('paintHighlights', () => {
 
   it('paints every block of a multi-block annotation', () => {
     paintHighlights(document, [
-      { annotationId: 7, range: { anchor: 'b-aaa', start: 16, end: 35 } },
-      { annotationId: 7, range: { anchor: 'b-bbb', start: 0, end: 9 } },
+      { annotationId: 7, annotationType: 'note', range: { anchor: 'b-aaa', start: 16, end: 35 } },
+      { annotationId: 7, annotationType: 'note', range: { anchor: 'b-bbb', start: 0, end: 9 } },
     ]);
 
     const marks = Array.from(document.querySelectorAll(`.${MARK_CLASS}`));
@@ -159,13 +163,57 @@ describe('paintHighlights', () => {
   });
 });
 
+describe('noteMarkOf', () => {
+  const markOfType = (annotationType: AnnotationType) => {
+    paintHighlights(document, [
+      { annotationId: 5, annotationType, range: { anchor: 'b-aaa', start: 4, end: 10 } },
+    ]);
+    return document.querySelector<HTMLElement>(`.${MARK_CLASS}`);
+  };
+
+  it('finds the mark of a note', () => {
+    const mark = markOfType('note');
+
+    expect(noteMarkOf(mark)).toBe(mark);
+    expect(noteMarkOf(mark?.firstChild ?? null)).toBe(mark);
+  });
+
+  // The reader paints into an iframe, and that document has its own Element
+  // constructor. An `instanceof Element` against this window's one is false for
+  // every node in there, which is invisible to a same-document test.
+  it('resolves a mark living in another document', () => {
+    const iframe = document.createElement('iframe');
+    document.body.appendChild(iframe);
+    const frameDoc = iframe.contentDocument as Document;
+
+    frameDoc.body.innerHTML =
+      '<div class="pagina"><p data-pagina="1" id="f-aaa">The atomic bomb.</p></div>';
+    paintHighlights(frameDoc, [
+      { annotationId: 5, annotationType: 'note', range: { anchor: 'f-aaa', start: 4, end: 10 } },
+    ]);
+
+    const mark = frameDoc.querySelector<HTMLElement>(`.${MARK_CLASS}`);
+    expect(mark?.textContent).toBe('atomic');
+    expect(noteMarkOf(mark)).toBe(mark);
+    expect(noteMarkOf(mark?.firstChild ?? null)).toBe(mark);
+  });
+
+  it('ignores a highlight mark and plain text', () => {
+    const mark = markOfType('highlight');
+
+    expect(noteMarkOf(mark)).toBeNull();
+    expect(noteMarkOf(block('b-bbb'))).toBeNull();
+    expect(noteMarkOf(null)).toBeNull();
+  });
+});
+
 describe('clearHighlights', () => {
   it('restores the original markup', () => {
     const before = document.body.innerHTML;
 
     paintHighlights(document, [
-      { annotationId: 1, range: { anchor: 'b-aaa', start: 4, end: 10 } },
-      { annotationId: 2, range: { anchor: 'b-ccc', start: 0, end: 8 } },
+      { annotationId: 1, annotationType: 'highlight', range: { anchor: 'b-aaa', start: 4, end: 10 } },
+      { annotationId: 2, annotationType: 'note', range: { anchor: 'b-ccc', start: 0, end: 8 } },
     ]);
     expect(document.querySelectorAll(`.${MARK_CLASS}`).length).toBe(2);
 
@@ -176,7 +224,9 @@ describe('clearHighlights', () => {
   });
 
   it('leaves a single text node behind so offsets stay computable', () => {
-    paintHighlights(document, [{ annotationId: 1, range: { anchor: 'b-aaa', start: 4, end: 10 } }]);
+    paintHighlights(document, [
+      { annotationId: 1, annotationType: 'highlight', range: { anchor: 'b-aaa', start: 4, end: 10 } },
+    ]);
     clearHighlights(document);
 
     expect(block('b-aaa').childNodes).toHaveLength(1);
@@ -192,7 +242,11 @@ describe('selection to paint round trip', () => {
 
     paintHighlights(
       document,
-      (found?.ranges ?? []).map((range) => ({ annotationId: 42, range })),
+      (found?.ranges ?? []).map((range) => ({
+        annotationId: 42,
+        annotationType: 'highlight' as const,
+        range,
+      })),
     );
 
     const painted = Array.from(document.querySelectorAll(`.${MARK_CLASS}`))
@@ -208,7 +262,11 @@ describe('selection to paint round trip', () => {
 
     paintHighlights(
       document,
-      (found?.ranges ?? []).map((range) => ({ annotationId: 9, range })),
+      (found?.ranges ?? []).map((range) => ({
+        annotationId: 9,
+        annotationType: 'highlight' as const,
+        range,
+      })),
     );
 
     const painted = Array.from(document.querySelectorAll(`.${MARK_CLASS}`))

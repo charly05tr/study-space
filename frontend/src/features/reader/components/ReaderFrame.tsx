@@ -10,10 +10,13 @@ import type { Annotation, AnchorRange } from '../../annotations/types';
 import {
   BLOCK_SELECTOR,
   clearHighlights,
+  markById,
+  noteMarkOf,
   paintHighlights,
   rangesFromSelection,
   scrollToAnchor,
 } from '../annotationDom';
+import type { NoteHover } from '../noteCard';
 import { READER_STYLE_ID, readerCss, type ReaderMode } from '../readerStyles';
 import { mostVisiblePageIndex } from '../visiblePage';
 
@@ -79,6 +82,15 @@ interface ReaderFrameProps {
   annotations: Annotation[];
   onAnchorChange: (anchor: string) => void;
   onSelection: (selection: SelectionInfo | null) => void;
+  /** Note mark under the pointer, or null when it leaves. */
+  onNoteHover: (hover: NoteHover | null) => void;
+  /**
+   * Controlled: the note whose card is on screen. The frame re-measures it on
+   * every scroll so the card travels with the text rather than with the
+   * viewport — by id, because the pointer has usually left the mark by then.
+   */
+  trackedNoteId: number | null;
+  onNoteMove: (hover: NoteHover) => void;
   onPagesCounted: (total: number) => void;
   /** Keyboard paging from inside the frame, where key events do not bubble out. */
   onNavigate: (delta: number) => void;
@@ -108,6 +120,9 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       annotations,
       onAnchorChange,
       onSelection,
+      onNoteHover,
+      trackedNoteId,
+      onNoteMove,
       onPagesCounted,
       onNavigate,
     },
@@ -120,11 +135,12 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
     const lastOffset = useRef(0);
     const frameRequest = useRef<number | null>(null);
     const ready = useRef(false);
+    const hoveredMark = useRef<HTMLElement | null>(null);
 
     // Read from inside frame listeners, which are attached once on load and
     // would otherwise capture the first render's props forever.
-    const latest = useRef({ onNavigate, onSelection });
-    latest.current = { onNavigate, onSelection };
+    const latest = useRef({ onNavigate, onSelection, onNoteHover, onNoteMove, trackedNoteId });
+    latest.current = { onNavigate, onSelection, onNoteHover, onNoteMove, trackedNoteId };
 
     const blobUrl = useMemo(
       () => URL.createObjectURL(new Blob([html], { type: 'text/html' })),
@@ -229,17 +245,70 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       view.scrollTo({ top: Math.max(0, top + lastOffset.current), ...INSTANT });
     }, []);
 
+    /**
+     * Emits at most once per mark: `mouseover` fires for every element under
+     * the pointer, and a mark can wrap several inline nodes.
+     */
+    /** Where a mark sits, in the parent's viewport. Null if it cannot be placed. */
+    const hoverFrom = useCallback((mark: HTMLElement): NoteHover | null => {
+      const frame = iframeRef.current?.getBoundingClientRect();
+      const annotationId = Number(mark.dataset.annotationId);
+      // A mark on a page focus mode has hidden measures as a zero-sized rect at
+      // the document origin, which would fling the card into the corner.
+      if (!frame || !annotationId || !mark.offsetParent) return null;
+
+      // Frame-relative rect plus the frame's own position = parent viewport.
+      const rect = mark.getBoundingClientRect();
+      return {
+        annotationId,
+        top: frame.top + rect.top,
+        bottom: frame.top + rect.bottom,
+        left: frame.left + rect.left + rect.width / 2,
+      };
+    }, []);
+
+    const emitNoteHover = useCallback(
+      (mark: HTMLElement | null) => {
+        if (mark === hoveredMark.current) return;
+
+        const hover = mark && hoverFrom(mark);
+        hoveredMark.current = hover ? mark : null;
+        latest.current.onNoteHover(hover);
+      },
+      [hoverFrom],
+    );
+
+    /** Re-anchors the open card to its mark after the document moved under it. */
+    const trackNote = useCallback(
+      (doc: Document) => {
+        const id = latest.current.trackedNoteId;
+        if (id === null) return;
+
+        const mark = markById(doc, id);
+        const hover = mark && hoverFrom(mark);
+        if (hover) latest.current.onNoteMove(hover);
+      },
+      [hoverFrom],
+    );
+
     const repaint = useCallback(
       (doc: Document) => {
+        // The hovered mark is about to be removed and re-created, so the card
+        // would be pointing at a node that no longer exists.
+        emitNoteHover(null);
         clearHighlights(doc);
         paintHighlights(
           doc,
           annotations.flatMap((annotation) =>
-            annotation.ranges.map((range) => ({ annotationId: annotation.id, range })),
+            annotation.ranges.map((range) => ({
+              annotationId: annotation.id,
+              annotationType: annotation.annotation_type,
+              range,
+            })),
           ),
         );
       },
-      [annotations],
+      [annotations, emitNoteHover],
     );
 
     const emitSelection = useCallback((doc: Document) => {
@@ -277,6 +346,7 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
         frameRequest.current = view.requestAnimationFrame(() => {
           frameRequest.current = null;
           reportAnchor(doc);
+          trackNote(doc);
         });
       };
 
@@ -292,6 +362,13 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
         },
         { passive: true },
       );
+      doc.addEventListener('mouseover', (event) => emitNoteHover(noteMarkOf(event.target)));
+      doc.addEventListener('mouseout', (event) => {
+        // Moving onto a child of the same mark also fires mouseout; only a
+        // pointer that actually left every note mark should close the card.
+        if (!noteMarkOf(event.relatedTarget)) emitNoteHover(null);
+      });
+
       // mouseup, not selectionchange: the latter fires on every drag tick.
       doc.addEventListener('mouseup', () => emitSelection(doc));
       doc.addEventListener('keyup', () => emitSelection(doc));
@@ -316,7 +393,17 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       }
       measure(doc);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [applySettings, emitSelection, initialAnchor, measure, onPagesCounted, repaint, reportAnchor]);
+    }, [
+      applySettings,
+      emitNoteHover,
+      emitSelection,
+      initialAnchor,
+      measure,
+      onPagesCounted,
+      repaint,
+      reportAnchor,
+      trackNote,
+    ]);
 
     /**
      * Single owner of what focus mode displays. Runs on mode change, on page
