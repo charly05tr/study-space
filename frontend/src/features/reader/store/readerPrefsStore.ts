@@ -9,9 +9,9 @@ import { persist } from 'zustand/middleware';
  * Line length does not suffer: --measure is 36em, so the ~68-character measure
  * scales with the font instead of stretching.
  */
-export const DEFAULT_FONT_SIZE = 24;
-export const MIN_FONT_SIZE = 16;
-export const MAX_FONT_SIZE = 40;
+export const DEFAULT_FONT_SIZE = 28;
+export const MIN_FONT_SIZE = 20;
+export const MAX_FONT_SIZE = 44;
 
 export const clampFontSize = (size: number) =>
   Math.min(Math.max(Math.round(size), MIN_FONT_SIZE), MAX_FONT_SIZE);

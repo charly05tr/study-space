@@ -99,9 +99,14 @@ STATIC_ROOT = '/app/staticfiles'
 AUTH_USER_MODEL = 'users.User'
 
 REST_FRAMEWORK = {
+    # JWT first on purpose. DRF builds the WWW-Authenticate header from the
+    # FIRST class listed, and SessionAuthentication has none to give, so a
+    # failed authentication was downgraded from 401 to 403 -- which the
+    # frontend cannot tell apart from a permission error, leaving expired
+    # access tokens to look like a denied request instead of a refreshable one.
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.SessionAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',

@@ -9,6 +9,8 @@ interface AuthState {
   
   // Acciones
   setCredentials: (user: User, tokens: AuthTokens) => void;
+  /** Refresh sólo renueva el access token; el resto de la sesión sigue igual. */
+  setTokens: (tokens: AuthTokens) => void;
   logout: () => void;
 }
 
@@ -19,9 +21,12 @@ export const useAuthStore = create<AuthState>()(
       tokens: null,
       isAuthenticated: false,
 
-      setCredentials: (user, tokens) => 
+      setCredentials: (user, tokens) =>
         set({ user, tokens, isAuthenticated: true }),
-        
+
+      setTokens: (tokens) => set({ tokens }),
+
+
       logout: () => 
         set({ user: null, tokens: null, isAuthenticated: false }),
     }),

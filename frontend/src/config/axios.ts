@@ -1,6 +1,7 @@
 // src/config/axios.ts
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../features/auth/store/authStore';
+import type { AuthTokens } from '../features/auth/types';
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
@@ -16,11 +17,11 @@ const axiosInstance = axios.create({
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (token: string) => void;
-  reject: (error: any) => void;
+  reject: (error: unknown) => void;
 }> = [];
 
 // Función para procesar las peticiones que se quedaron en espera
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
@@ -48,24 +49,44 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
+/**
+ * ¿Este error significa "tu access token venció" y no "no tenés permiso"?
+ *
+ * Lo correcto es un 401, pero DRF arma el header WWW-Authenticate con la
+ * PRIMERA clase de DEFAULT_AUTHENTICATION_CLASSES y, si esa no aporta ninguno,
+ * degrada el 401 a 403. SimpleJWT manda `code: "token_not_valid"` en las dos
+ * variantes, así que se mira el cuerpo y el refresh sobrevive a esa diferencia
+ * de configuración del backend.
+ */
+const isExpiredToken = (error: AxiosError): boolean => {
+  const status = error.response?.status;
+  if (status === 401) return true;
+
+  const code = (error.response?.data as { code?: string } | undefined)?.code;
+  return status === 403 && code === 'token_not_valid';
+};
+
 // 2. INTERCEPTOR DE RESPONSE
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as CustomAxiosRequestConfig;
 
-    // Si el error es 401 y no hemos reintentado esta petición aún
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-      
+    // Si el token venció y no hemos reintentado esta petición aún
+    if (isExpiredToken(error) && originalRequest && !originalRequest._retry) {
+
       if (isRefreshing) {
         // Si YA estamos refrescando el token, ponemos esta petición en la cola a esperar
+        // La marcamos igual: si el reintento vuelve a fallar, se rechaza en vez
+        // de disparar una segunda ronda de refresh.
+        originalRequest._retry = true;
         return new Promise(function (resolve, reject) {
           failedQueue.push({
             resolve: (token: string) => {
               originalRequest.headers.Authorization = `Bearer ${token}`;
               resolve(axiosInstance(originalRequest)); // Reintenta la petición original
             },
-            reject: (err: any) => {
+            reject: (err: unknown) => {
               reject(err);
             },
           });
@@ -76,7 +97,7 @@ axiosInstance.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const { tokens, user, setCredentials, logout } = useAuthStore.getState();
+      const { tokens, setTokens, logout } = useAuthStore.getState();
       const refreshToken = tokens?.refresh;
 
       if (!refreshToken) {
@@ -93,14 +114,19 @@ axiosInstance.interceptors.response.use(
           refresh: refreshToken,
         });
 
-        // Asumiendo que tu backend devuelve { access: '...', refresh: '...' }
-        // Ajusta esto según lo que devuelva exactamente tu API de Django
-        const newTokens = refreshResponse.data;
+        // TokenRefreshView devuelve SÓLO { access }: ROTATE_REFRESH_TOKENS no
+        // está activado en el backend. Se parte del refresh token actual porque
+        // guardar la respuesta tal cual lo borraba del store, y la sesión moría
+        // en el siguiente vencimiento. El spread respeta una eventual rotación.
+        const newTokens: AuthTokens = {
+          refresh: refreshToken,
+          ...(refreshResponse.data as Partial<AuthTokens>),
+        } as AuthTokens;
 
-        // 1. Actualizamos Zustand (necesitamos el user que ya teníamos)
-        if (user) {
-          setCredentials(user, newTokens);
-        }
+        // 1. Actualizamos Zustand. Sin tocar el user: renovar el access token
+        //    no es un login, y depender de él dejaba la sesión sin guardar
+        //    cuando el store tenía tokens pero todavía no el perfil.
+        setTokens(newTokens);
 
         // 2. Procesamos la cola: le damos el nuevo token a las peticiones en espera
         processQueue(null, newTokens.access);
