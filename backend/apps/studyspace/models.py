@@ -28,7 +28,13 @@ class Note(models.Model):
     # Data
     title = models.CharField(max_length=200)
     content = models.JSONField(default=dict)
-    
+
+    # Huella de los bloques indexados la ultima vez. El autoguardado dispara una
+    # vez por segundo de escritura; reindexar 200 bloques en cada uno seria
+    # miles de escrituras por nota. Si la huella no cambio, no hay nada que
+    # sincronizar. Cambiar una palabra SI la cambia, mover el cursor no.
+    blocks_hash = models.CharField(max_length=64, blank=True, editable=False)
+
     # Relations
     studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='notes')
     
@@ -37,6 +43,108 @@ class Note(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     
+"""Un Block es un parrafo, titulo, item o cita de una Note, visto como nodo del grafo.
+
+   Esta tabla es un INDICE DERIVADO, no la fuente de verdad: el documento sigue
+   siendo Note.content. Se puede reconstruir entera desde el JSON en cualquier
+   momento, y por eso un error de sincronizacion rompe el indice pero nunca el
+   texto del usuario.
+
+   Ver BlockIndexService en apps/studyspace/services/block_service.py"""
+class Block(models.Model):
+    # El UUID que la extension UniqueID ya escribio en Note.content. No se
+    # genera una PK nueva: el id del JSON ES la identidad del bloque, y es lo
+    # que sobrevive a que el usuario edite el texto.
+    id = models.UUIDField(primary_key=True, editable=False)
+
+    note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='blocks')
+
+    # Nombre del nodo de Tiptap: paragraph, heading, listItem, annotation...
+    block_type = models.CharField(max_length=32)
+
+    # Copia del texto del bloque. Desnormalizada para poder buscar y etiquetar
+    # nodos del grafo sin abrir el JSON de cada nota.
+    text = models.TextField(blank=True)
+
+    # Orden dentro del documento, en recorrido de lectura.
+    position = models.PositiveIntegerField()
+
+    # Borrado suave. Un bloque que desaparece de la nota NO se elimina: lo mas
+    # valioso de la app no es el texto sino las relaciones que el usuario penso,
+    # y borrar un parrafo sin querer no deberia llevarselas puestas.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['position']
+        indexes = [
+            models.Index(fields=['note', 'position']),
+        ]
+
+    @property
+    def is_orphan(self) -> bool:
+        """El bloque ya no esta en la nota, pero sus relaciones siguen vivas."""
+        return self.deleted_at is not None
+
+
+"""Una relacion dirigida entre dos blocks. Es la arista del mapa conceptual."""
+class BlockLink(models.Model):
+    class Kind(models.TextChoices):
+        RELATES = 'relates', 'Relates to'
+        SUPPORTS = 'supports', 'Supports'
+        CONTRADICTS = 'contradicts', 'Contradicts'
+        DEFINES = 'defines', 'Defines'
+        EXAMPLE_OF = 'example_of', 'Example of'
+        DERIVES_FROM = 'derives_from', 'Derives from'
+
+    # Tipos donde el sentido de la flecha no aporta: la UI los dibuja sin punta
+    # y el recorrido los toma en las dos direcciones.
+    SYMMETRIC_KINDS = frozenset({Kind.RELATES, Kind.CONTRADICTS})
+
+    class Origin(models.TextChoices):
+        INLINE = 'inline', 'Written in the note'
+        GRAPH = 'graph', 'Drawn in the map'
+
+    source = models.ForeignKey(Block, on_delete=models.CASCADE, related_name='links_out')
+    target = models.ForeignKey(Block, on_delete=models.CASCADE, related_name='links_in')
+
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.RELATES)
+
+    # De donde nacio la arista. Sin esto, sincronizar una nota borraria todas
+    # las relaciones dibujadas a mano en el mapa: el sync solo reconcilia las
+    # 'inline', que son las unicas que viven en el JSON.
+    origin = models.CharField(max_length=10, choices=Origin.choices, default=Origin.GRAPH)
+
+    # El porque de la conexion. Es la mitad del valor de la arista.
+    note = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            # Dos bloques pueden estar relacionados de varias formas distintas,
+            # pero no dos veces de la misma.
+            models.UniqueConstraint(
+                fields=['source', 'target', 'kind'],
+                name='unique_link_per_kind',
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(source=models.F('target')),
+                name='block_link_not_self',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['source']),
+            models.Index(fields=['target']),
+        ]
+
+    @property
+    def is_symmetric(self) -> bool:
+        return self.kind in self.SYMMETRIC_KINDS
+
+
 class NoteImage(models.Model):
     # Data
     alt = models.CharField(null=True, blank=True)
