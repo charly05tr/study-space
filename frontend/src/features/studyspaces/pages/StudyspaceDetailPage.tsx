@@ -11,6 +11,7 @@ import {
 } from '../../../components/ui';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import { formatDate } from '../../../lib/formatDate';
+import { GraphSectionMount } from '../../graph/components/GraphSectionMount';
 import { AddNoteForm } from '../../notes/components/AddNoteForm';
 import { NoteRow } from '../../notes/components/NoteRow';
 import { AddSourceForm } from '../../sources/components/AddSourceForm';
@@ -168,6 +169,19 @@ export const StudyspaceDetailPage = () => {
           </ul>
         </DetailSection>
       </div>
+
+      {/*
+        Outside the two-column grid on purpose: notes, sources and references are
+        peer lists, and the map is a way of looking at all of them at once. Half
+        the width would also make it unreadable.
+      */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-2">
+          <h2 className="font-heading text-sm uppercase tracking-[0.18em] text-ink">Map</h2>
+        </div>
+
+        <GraphSectionMount studyspaceId={id} />
+      </section>
     </article>
   );
 };

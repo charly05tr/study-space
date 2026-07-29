@@ -12,6 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.101.4",
@@ -23,10 +25,12 @@
     "@tiptap/starter-kit": "^3.29.1",
     "@tiptap/suggestion": "^3.29.1",
     "axios": "^1.18.1",
+    "d3-force-3d": "^3.0.6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
     "tailwindcss": "^4.3.3",
+    "three": "^0.185.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
@@ -34,6 +38,7 @@
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.1",
     "@vitejs/plugin-react": "^6.0.3",
     "eslint": "^10.6.0",
     "eslint-plugin-react-hooks": "^7.1.1",

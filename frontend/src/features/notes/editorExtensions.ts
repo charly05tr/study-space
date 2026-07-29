@@ -5,6 +5,7 @@ import UniqueID from '@tiptap/extension-unique-id';
 import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
 import { AnnotationNode } from './annotationNode';
+import { BlockLinkNode } from './blockLinkNode';
 
 /**
  * Block types that receive a stable `id` attribute.
@@ -49,6 +50,11 @@ export const noteExtensions: Extensions = [
   // Part of the schema, not of the UI: a note containing a citation must parse
   // the same wherever it is read, including in a read-only renderer.
   AnnotationNode,
+
+  // Same reasoning. The backend reads these mentions straight out of the stored
+  // JSON to build the graph, so they have to survive any parse.
+  // See extract_links in apps/studyspace/services/block_service.py
+  BlockLinkNode,
 
   /**
    * Stamps `attrs.id` (a UUID v4) onto every block listed above.

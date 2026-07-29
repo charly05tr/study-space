@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core';
+import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import Suggestion from '@tiptap/suggestion';
 import { SlashMenu, type SlashMenuHandle, type SlashMenuProps } from './components/SlashMenu';
@@ -19,6 +20,10 @@ export const SlashCommand = Extension.create({
     return [
       Suggestion<SlashItem, SlashItem>({
         editor: this.editor,
+        // Explicit key. Suggestion defaults every instance to `suggestion$`,
+        // and ProseMirror refuses two plugins sharing a key — so the moment a
+        // second suggestion extension exists, the editor fails to mount.
+        pluginKey: new PluginKey('slashSuggestion'),
         char: '/',
 
         // Default `allowedPrefixes` is [' '], so a slash inside a word — a URL

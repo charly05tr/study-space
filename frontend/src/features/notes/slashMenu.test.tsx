@@ -5,6 +5,7 @@ import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { noteExtensions } from './editorExtensions';
+import { BlockLinkCommand } from './blockLinkCommand';
 import { SlashCommand } from './slashCommand';
 
 /**
@@ -24,7 +25,14 @@ import { SlashCommand } from './slashCommand';
  */
 
 const Harness = ({ onReady }: { onReady: (editor: Editor) => void }) => {
-  const editor = useEditor({ extensions: [...noteExtensions, SlashCommand] });
+  /**
+   * The same extension list BlockEditor mounts, not just the one under test.
+   *
+   * This used to load SlashCommand alone, and so never noticed that both
+   * suggestion extensions were claiming ProseMirror's default plugin key — the
+   * suite stayed green while the real editor refused to mount at all.
+   */
+  const editor = useEditor({ extensions: [...noteExtensions, SlashCommand, BlockLinkCommand] });
 
   useEffect(() => {
     if (editor) onReady(editor);

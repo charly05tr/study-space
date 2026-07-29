@@ -7,6 +7,7 @@ import { noteExtensions } from '../editorExtensions';
 import { useNoteAutosave } from '../hooks/useNoteAutosave';
 import { toEditorContent } from '../noteDocument';
 import { NoteEditorContext } from '../noteEditorContext';
+import { BlockLinkCommand } from '../blockLinkCommand';
 import { SlashCommand } from '../slashCommand';
 import { annotationToNodeAttrs } from '../slashMenuItems';
 import type { NoteDocument } from '../types';
@@ -75,7 +76,7 @@ export const BlockEditor = ({
        * `noteExtensions` stays the schema contract; SlashCommand is appended
        * here because it is UI, not document shape. See slashCommand.ts.
        */
-      extensions: [...noteExtensions, SlashCommand],
+      extensions: [...noteExtensions, SlashCommand, BlockLinkCommand],
       content: toEditorContent(initialContent),
       editable,
       // The bubble menu subscribes to what it needs through `useEditorState`;

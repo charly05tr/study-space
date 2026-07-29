@@ -18,6 +18,7 @@ import { CreateStudyspacePage } from '../features/studyspaces/pages/CreateStudys
 import { StudyspaceDetailPage } from '../features/studyspaces/pages/StudyspaceDetailPage';
 import { ReaderPage } from '../features/reader/pages/ReaderPage';
 import { NotePage } from '../features/notes/pages/NotePage';
+import { LazyGraphPage } from './LazyGraphPage';
 
 export const router = createBrowserRouter([
   {
@@ -57,6 +58,9 @@ export const router = createBrowserRouter([
           // El detalle es un hub (sources, notes, references), no una vista de
           // lectura: va en AppLayout, no en ReaderLayout.
           { path: '/studyspace/:studyspaceId', element: <StudyspaceDetailPage /> },
+          // Nested under the studyspace so the sidebar keeps showing its
+          // notes and sources: useActiveStudyspaceId matches with end:false.
+          { path: '/studyspace/:studyspaceId/graph', element: <LazyGraphPage /> },
           // El editor es escritura, no lectura: va en AppLayout como el hub, no
           // en ReaderLayout.
           { path: '/note/:noteId', element: <NotePage /> },

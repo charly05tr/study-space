@@ -59,6 +59,20 @@ export const StudyspaceNav = () => {
         {studyspace.title}
       </NavLink>
 
+      {/* Above the lists on purpose: the map is a way of looking at all of them
+          at once, not a third kind of thing sitting alongside. */}
+      <NavLink
+        to={`/studyspace/${studyspace.id}/graph`}
+        className={({ isActive }) =>
+          cn(
+            'block border-l-2 py-1 pl-3 font-heading text-xs uppercase tracking-[0.14em] transition-colors',
+            isActive ? 'border-primary text-ink' : 'border-transparent text-muted hover:text-ink',
+          )
+        }
+      >
+        Map
+      </NavLink>
+
       <Section title="Notes" count={studyspace.notes.length}>
         {studyspace.notes.length === 0 ? (
           <p className="pl-3 text-sm text-muted/70">None yet</p>
