@@ -1,35 +1,99 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { EmptyState, ErrorState, Loading } from '../../../components/ui';
+import { EmptyState, ErrorState, Loading, useNotification } from '../../../components/ui';
+import { useCreateBlockLink, useDeleteBlockLink } from '../../blocks/hooks/useBlockLinkMutations';
+import type { RelationKind } from '../../blocks/types';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import { GraphCanvas } from '../components/GraphCanvas';
 import { GraphHud } from '../components/GraphHud';
 import { useGraphLayout } from '../hooks/useGraphLayout';
+import { relationsOf } from '../relations';
+import type { Connecting } from '../types';
 
 export const GraphPage = () => {
   const { studyspaceId } = useParams();
   const id = Number(studyspaceId);
   const { layout, isPending, isError, error, refetch } = useGraphLayout(id);
 
+  const { notify } = useNotification();
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  /** Where a Tab walk came from, so Escape retraces it instead of just clearing. */
+  const [connecting, setConnecting] = useState<Connecting>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [showEdges, setShowEdges] = useState(true);
+  /** Which row of the relation list the arrow keys are sitting on. */
+  const [relationIndex, setRelationIndex] = useState(0);
+
+  const relations = useMemo(() => relationsOf(layout, focusedId), [layout, focusedId]);
+
+  const createLink = useCreateBlockLink(id);
+  const deleteLink = useDeleteBlockLink(id);
+
+  /** Where the walk came from, so Escape retraces it instead of just clearing. */
   const trail = useRef<string[]>([]);
-  const neighbourIndex = useRef(0);
 
   const focus = useCallback((next: string | null) => {
+    setRelationIndex(0);
     setFocusedId((current) => {
       if (current && next && current !== next) trail.current.push(current);
-      neighbourIndex.current = 0;
       return next;
     });
   }, []);
 
   /**
+   * A click on a node means two different things depending on the mode.
+   *
+   * While connecting it names the other end rather than moving the focus —
+   * flying the camera away mid-gesture would lose sight of the block the
+   * relation starts from.
+   */
+  const pick = useCallback(
+    (next: string | null) => {
+      if (!connecting || next === null) {
+        if (!connecting) focus(next);
+        return;
+      }
+      if (next === connecting.sourceId) return;
+      setConnecting({ sourceId: connecting.sourceId, targetId: next });
+    },
+    [connecting, focus],
+  );
+
+  const confirmConnect = (kind: RelationKind, why: string) => {
+    if (!connecting?.targetId) return;
+
+    createLink.mutate(
+      { source: connecting.sourceId, target: connecting.targetId, kind, note: why },
+      {
+        onSuccess: () => setConnecting(null),
+        onError: (mutationError) =>
+          notify({
+            variant: 'error',
+            title: 'Could not connect them',
+            message: getApiErrorMessage(mutationError),
+          }),
+      },
+    );
+  };
+
+  const removeRelation = (linkId: number) => {
+    setDeletingId(linkId);
+    deleteLink.mutate(linkId, {
+      onSettled: () => setDeletingId(null),
+      onError: (mutationError) =>
+        notify({
+          variant: 'error',
+          title: 'Could not remove it',
+          message: getApiErrorMessage(mutationError),
+        }),
+    });
+  };
+
+  /**
    * Walking the graph by its relations rather than by space.
    *
    * This is the interaction that makes the map a thinking tool instead of a
-   * diagram: Tab moves along an edge, so the path you take through the scene is
-   * the path of an argument.
+   * diagram: you move along an edge you have read first, so the path you take
+   * through the scene is the path of an argument.
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -40,27 +104,61 @@ export const GraphPage = () => {
 
       if (event.key === 'Escape') {
         event.preventDefault();
+        // Escape unwinds one step at a time: first the gesture in progress, and
+        // only once there is none does it start retracing the walk.
+        if (connecting) {
+          setConnecting(null);
+          return;
+        }
         const previous = trail.current.pop() ?? null;
         setFocusedId(previous);
-        neighbourIndex.current = 0;
+        setRelationIndex(0);
         return;
       }
 
-      if (event.key !== 'Tab' || !focusedId) return;
+      // Walking away mid-gesture would leave a half-drawn relation behind.
+      if (connecting) return;
 
-      const neighbours = layout.neighbours.get(focusedId) ?? [];
-      if (neighbours.length === 0) return;
+      // The shortcut exists because 'Connect to…' is buried in a panel, and
+      // reaching for the mouse is the slowest part of drawing a relation.
+      if ((event.key === 'c' || event.key === 'C') && focusedId) {
+        event.preventDefault();
+        setConnecting({ sourceId: focusedId, targetId: null });
+        return;
+      }
 
-      event.preventDefault();
-      const step = event.shiftKey ? -1 : 1;
-      neighbourIndex.current =
-        (neighbourIndex.current + step + neighbours.length) % neighbours.length;
-      focus(neighbours[neighbourIndex.current]);
+      if (event.key === 'l' || event.key === 'L') {
+        event.preventDefault();
+        setShowEdges((visible) => !visible);
+        return;
+      }
+
+      if (relations.length === 0) return;
+
+      /**
+       * Arrows move down the list the panel is showing; Enter travels.
+       *
+       * Tab used to cycle the neighbours blindly, which is unusable the
+       * moment a block has more than two of them: you could not see where
+       * the next press would land, so every step was a guess. Reading the
+       * row first and then committing is how you follow an argument.
+       */
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        setRelationIndex((current) => (current + step + relations.length) % relations.length);
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        focus(relations[relationIndex].other.id);
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [focusedId, layout, focus]);
+  }, [focusedId, focus, connecting, relations, relationIndex]);
 
   if (isPending) return <Loading full label="Drawing the map" />;
 
@@ -104,11 +202,30 @@ export const GraphPage = () => {
     // Fills whatever the layout gives it: the map is the page, not a widget on
     // one. `relative` anchors the HUD over the canvas.
     <div className="relative -m-6 -my-8 h-[calc(100dvh-5rem)] overflow-hidden">
-      <GraphCanvas layout={layout} focusedId={focusedId} onPick={focus} />
+      <GraphCanvas
+        layout={layout}
+        // While connecting, the source keeps the light so you can see where
+        // the relation is starting from.
+        focusedId={connecting?.sourceId ?? focusedId}
+        showEdges={showEdges}
+        onPick={pick}
+      />
       <GraphHud
         layout={layout}
         focused={focusedId ? (layout.byId.get(focusedId) ?? null) : null}
-        onPick={focus}
+        connecting={connecting}
+        relations={relations}
+        relationIndex={relationIndex}
+        onHoverRelation={setRelationIndex}
+        onPick={pick}
+        onStartConnect={() => focusedId && setConnecting({ sourceId: focusedId, targetId: null })}
+        onCancelConnect={() => setConnecting(null)}
+        onConfirmConnect={confirmConnect}
+        onDeleteRelation={removeRelation}
+        saving={createLink.isPending}
+        deletingId={deletingId}
+        showEdges={showEdges}
+        onToggleEdges={() => setShowEdges((visible) => !visible)}
       />
     </div>
   );

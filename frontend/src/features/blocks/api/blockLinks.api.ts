@@ -1,0 +1,30 @@
+import axios from '../../../config/axios';
+import type { BlockLink, RelationKind } from '../types';
+
+const BASE_URL = '/block-links';
+
+export interface CreateBlockLinkPayload {
+  source: string;
+  target: string;
+  kind: RelationKind;
+  /** Why the two are connected. Optional, and the better half of the edge. */
+  note?: string;
+}
+
+export const blockLinksApi = {
+  /**
+   * `origin` is not sent: the server stamps it as `graph`.
+   *
+   * That is the rule the whole model rests on — what is written in a note is
+   * governed by the note, and only edges drawn here are the API's to own.
+   */
+  create: async (payload: CreateBlockLinkPayload): Promise<BlockLink> => {
+    const response = await axios.post(`${BASE_URL}/`, payload);
+    return response.data;
+  },
+
+  /** Refused with a 400 for edges written with `[[`; delete those from the text. */
+  remove: async (id: number): Promise<void> => {
+    await axios.delete(`${BASE_URL}/${id}/`);
+  },
+};

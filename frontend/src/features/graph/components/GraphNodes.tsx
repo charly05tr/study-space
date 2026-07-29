@@ -8,7 +8,9 @@ interface GraphNodesProps {
   palette: GraphPalette;
   focusedId: string | null;
   neighbourIds: Set<string>;
+  hoveredId: string | null;
   onPick: (id: string) => void;
+  onHover: (id: string | null) => void;
 }
 
 const dummy = new THREE.Object3D();
@@ -29,7 +31,9 @@ export const GraphNodes = ({
   palette,
   focusedId,
   neighbourIds,
+  hoveredId,
   onPick,
+  onHover,
 }: GraphNodesProps) => {
   const mesh = useRef<THREE.InstancedMesh>(null);
 
@@ -44,11 +48,15 @@ export const GraphNodes = ({
     layout.nodes.forEach((node, index) => {
       dummy.position.set(node.x, node.y, node.z);
       const radius = nodeRadius(node.degree);
-      dummy.scale.setScalar(node.id === focusedId ? radius * 1.35 : radius);
+      // Hovering swells the node as well as labelling it: at a distance the
+      // label alone does not tell you WHICH point it belongs to.
+      const emphasis = node.id === focusedId ? 1.35 : node.id === hoveredId ? 1.25 : 1;
+      dummy.scale.setScalar(radius * emphasis);
       dummy.updateMatrix();
       instances.setMatrixAt(index, dummy.matrix);
 
       if (node.id === focusedId) colour.copy(primary);
+      else if (node.id === hoveredId) colour.copy(primary).lerp(ink, 0.25);
       else if (neighbourIds.has(node.id)) colour.copy(primary).lerp(ink, 0.45);
       // An orphan is still a node — its paragraph is gone, the thinking is not.
       // Drawn as a ghost so it reads as absent without disappearing.
@@ -65,7 +73,7 @@ export const GraphNodes = ({
 
     instances.instanceMatrix.needsUpdate = true;
     if (instances.instanceColor) instances.instanceColor.needsUpdate = true;
-  }, [layout, palette, focusedId, neighbourIds]);
+  }, [layout, palette, focusedId, neighbourIds, hoveredId]);
 
   if (layout.nodes.length === 0) return null;
 
@@ -81,10 +89,17 @@ export const GraphNodes = ({
         const index = event.instanceId;
         if (index !== undefined) onPick(layout.nodes[index].id);
       }}
-      onPointerOver={() => {
+      // pointermove, not pointerover: one instanced mesh is a single object,
+      // so moving between two nodes never fires over/out and the label would
+      // stay stuck on whichever one was entered first.
+      onPointerMove={(event) => {
+        event.stopPropagation();
+        const index = event.instanceId;
+        onHover(index === undefined ? null : layout.nodes[index].id);
         document.body.style.cursor = 'pointer';
       }}
       onPointerOut={() => {
+        onHover(null);
         document.body.style.cursor = '';
       }}
     >

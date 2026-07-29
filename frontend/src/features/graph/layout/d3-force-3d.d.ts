@@ -45,6 +45,8 @@ declare module 'd3-force-3d' {
   export interface Simulation<Node> {
     nodes(nodes: Node[]): this;
     force(name: string, force: Force | null): this;
+    /** Replaces Math.random inside the forces; see simulate.ts. */
+    randomSource(source: () => number): this;
     alpha(value: number): this;
     alphaDecay(value: number): this;
     alphaMin(value: number): this;
@@ -58,7 +60,14 @@ declare module 'd3-force-3d' {
     numDimensions?: number,
   ): Simulation<Node>;
 
+  export interface AxisForce extends Force {
+    strength(value: number): this;
+  }
+
   export function forceLink<Link>(links?: Link[]): LinkForce<Link>;
+  export function forceX(x?: number): AxisForce;
+  export function forceY(y?: number): AxisForce;
+  export function forceZ(z?: number): AxisForce;
   export function forceManyBody(): ManyBodyForce;
   export function forceCenter(x?: number, y?: number, z?: number): CenterForce;
   export function forceCollide(radius?: number): CollideForce;

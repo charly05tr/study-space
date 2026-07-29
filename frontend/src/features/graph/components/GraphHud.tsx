@@ -1,21 +1,28 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '../../../components/ui/cn';
-import { RELATION_LABEL, type RelationKind } from '../../blocks/types';
+import { RELATION_KINDS, RELATION_LABEL, type RelationKind } from '../../blocks/types';
 import { EDGE_STYLES } from '../graphStyle';
-import type { GraphLayout, PositionedNode } from '../types';
+import type { Relation } from '../relations';
+import type { Connecting, GraphLayout, PositionedNode } from '../types';
 
 interface GraphHudProps {
   layout: GraphLayout;
   focused: PositionedNode | null;
+  connecting: Connecting;
+  relations: Relation[];
+  /** Row the arrow keys are on; Enter travels to it. */
+  relationIndex: number;
+  onHoverRelation: (index: number) => void;
   onPick: (id: string) => void;
-}
-
-/** The relations touching a node, with the direction read from its side. */
-interface Relation {
-  other: PositionedNode;
-  kind: RelationKind;
-  outgoing: boolean;
+  onStartConnect: () => void;
+  onCancelConnect: () => void;
+  onConfirmConnect: (kind: RelationKind, note: string) => void;
+  onDeleteRelation: (linkId: number) => void;
+  saving: boolean;
+  deletingId: number | null;
+  showEdges: boolean;
+  onToggleEdges: () => void;
 }
 
 const Panel = ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -29,8 +36,25 @@ const Panel = ({ children, className }: { children: React.ReactNode; className?:
   </div>
 );
 
-export const GraphHud = ({ layout, focused, onPick }: GraphHudProps) => {
+export const GraphHud = ({
+  layout,
+  focused,
+  connecting,
+  relations,
+  relationIndex,
+  onHoverRelation,
+  onPick,
+  onStartConnect,
+  onCancelConnect,
+  onConfirmConnect,
+  onDeleteRelation,
+  saving,
+  deletingId,
+  showEdges,
+  onToggleEdges,
+}: GraphHudProps) => {
   const [query, setQuery] = useState('');
+  const [why, setWhy] = useState('');
 
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -38,18 +62,8 @@ export const GraphHud = ({ layout, focused, onPick }: GraphHudProps) => {
     return layout.nodes.filter((node) => node.text.toLowerCase().includes(needle)).slice(0, 8);
   }, [layout, query]);
 
-  const relations = useMemo<Relation[]>(() => {
-    if (!focused) return [];
-
-    return layout.edges
-      .filter((edge) => edge.source === focused.id || edge.target === focused.id)
-      .map((edge) => {
-        const outgoing = edge.source === focused.id;
-        const other = layout.byId.get(outgoing ? edge.target : edge.source);
-        return other ? { other, kind: edge.kind, outgoing } : null;
-      })
-      .filter((relation): relation is Relation => relation !== null);
-  }, [layout, focused]);
+  const source = connecting ? (layout.byId.get(connecting.sourceId) ?? null) : null;
+  const target = connecting?.targetId ? (layout.byId.get(connecting.targetId) ?? null) : null;
 
   return (
     // The HUD floats over the canvas and lets pointer events through, so
@@ -89,15 +103,92 @@ export const GraphHud = ({ layout, focused, onPick }: GraphHudProps) => {
           )}
         </Panel>
 
-        <Panel className="px-3 py-2">
+        <Panel className="flex items-center gap-3 px-3 py-2">
           <p className="font-heading text-[0.6rem] uppercase tracking-[0.16em] text-muted">
             {layout.nodes.length} blocks · {layout.edges.length} relations
           </p>
+
+          {/* Hiding the lines is not a cosmetic switch: on a dense map they
+              cover the nodes you are trying to pick, which is most of what
+              makes connecting two blocks fiddly. */}
+          <button
+            type="button"
+            aria-pressed={showEdges}
+            onClick={onToggleEdges}
+            className={cn(
+              'border-b-2 pb-0.5 font-heading text-[0.6rem] uppercase tracking-[0.14em] transition-colors',
+              showEdges
+                ? 'border-primary text-ink'
+                : 'border-transparent text-muted hover:text-ink',
+            )}
+          >
+            Lines
+          </button>
         </Panel>
       </div>
 
       <div className="flex items-end justify-between gap-4">
-        {focused ? (
+        {connecting ? (
+          <Panel className="max-w-md p-3">
+            <p className="font-heading text-[0.6rem] uppercase tracking-[0.16em] text-muted">
+              {target ? 'How do they relate?' : 'Pick the other block'}
+            </p>
+
+            <p className="mt-1 truncate text-sm text-ink italic">{source?.text || '(empty block)'}</p>
+
+            {target ? (
+              <>
+                <p className="mt-1 truncate border-l-2 border-primary pl-2 text-sm text-ink italic">
+                  {target.text || '(empty block)'}
+                </p>
+
+                {/* Optional, and the better half of the edge: the type says what
+                    kind of connection it is, this says why you saw it. */}
+                <input
+                  autoFocus
+                  value={why}
+                  placeholder="Why? (optional)"
+                  aria-label="Why are they related"
+                  onChange={(event) => setWhy(event.target.value)}
+                  className="mt-3 w-full border-b border-rule bg-transparent py-1 font-body text-sm text-ink placeholder:text-muted/60 focus:border-primary focus:outline-none"
+                />
+
+                <ul className="mt-3 flex flex-wrap gap-1">
+                  {RELATION_KINDS.map((relation) => (
+                    <li key={relation.kind}>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => {
+                          onConfirmConnect(relation.kind, why.trim());
+                          setWhy('');
+                        }}
+                        className="rounded-xs border border-rule px-2 py-1 font-heading text-[0.6rem] uppercase tracking-[0.14em] text-muted transition-colors hover:border-primary hover:text-ink disabled:opacity-45"
+                      >
+                        {relation.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-muted">
+                Click any other block on the map. Esc cancels.
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                onCancelConnect();
+                setWhy('');
+              }}
+              className="mt-3 font-heading text-[0.6rem] uppercase tracking-[0.14em] text-muted underline underline-offset-4 hover:text-ink"
+            >
+              Cancel
+            </button>
+          </Panel>
+        ) : focused ? (
           <Panel className="max-w-md p-3">
             <p className="font-heading text-[0.6rem] uppercase tracking-[0.16em] text-muted">
               {focused.note_title}
@@ -110,12 +201,19 @@ export const GraphHud = ({ layout, focused, onPick }: GraphHudProps) => {
 
             {relations.length > 0 && (
               <ul className="mt-3 flex flex-col gap-1 border-t border-rule pt-2">
-                {relations.map((relation) => (
-                  <li key={`${relation.kind}-${relation.other.id}`}>
+                {relations.map((relation, index) => (
+                  <li
+                    key={relation.id}
+                    className={cn(
+                      'flex items-baseline gap-2 border-l-2 pl-2 transition-colors',
+                      index === relationIndex ? 'border-primary bg-tint/60' : 'border-transparent',
+                    )}
+                  >
                     <button
                       type="button"
+                      onMouseEnter={() => onHoverRelation(index)}
                       onClick={() => onPick(relation.other.id)}
-                      className="flex w-full items-baseline gap-2 text-left text-sm text-muted transition-colors hover:text-ink"
+                      className="flex min-w-0 flex-1 items-baseline gap-2 text-left text-sm text-muted transition-colors hover:text-ink"
                     >
                       <span className="shrink-0 font-heading text-[0.6rem] uppercase tracking-[0.14em] text-primary-ink">
                         {/* Direction matters: "supports" read from the other end
@@ -125,22 +223,47 @@ export const GraphHud = ({ layout, focused, onPick }: GraphHudProps) => {
                       </span>
                       <span className="min-w-0 truncate">{relation.other.text || '(empty)'}</span>
                     </button>
+
+                    {/* Only edges drawn on the map. One written with `[[` is
+                        governed by the note, and the API refuses to delete it —
+                        offering a button that always fails would be a lie. */}
+                    {relation.origin === 'graph' && (
+                      <button
+                        type="button"
+                        aria-label="Remove this relation"
+                        disabled={deletingId === relation.id}
+                        onClick={() => onDeleteRelation(relation.id)}
+                        className="shrink-0 px-1 text-muted transition-colors hover:text-danger disabled:opacity-45"
+                      >
+                        &times;
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
 
-            <Link
-              to={`/note/${focused.note}`}
-              className="mt-3 inline-block font-heading text-[0.6rem] uppercase tracking-[0.14em] text-primary-ink underline underline-offset-4 hover:text-ink"
-            >
-              Open the note
-            </Link>
+            <div className="mt-3 flex flex-wrap items-baseline gap-4">
+              <button
+                type="button"
+                onClick={onStartConnect}
+                className="font-heading text-[0.6rem] uppercase tracking-[0.14em] text-primary-ink underline underline-offset-4 hover:text-ink"
+              >
+                Connect to…
+              </button>
+
+              <Link
+                to={`/note/${focused.note}`}
+                className="font-heading text-[0.6rem] uppercase tracking-[0.14em] text-primary-ink underline underline-offset-4 hover:text-ink"
+              >
+                Open the note
+              </Link>
+            </div>
           </Panel>
         ) : (
           <Panel className="px-3 py-2">
             <p className="font-heading text-[0.6rem] uppercase tracking-[0.16em] text-muted">
-              Pick a block to explore · Tab walks its relations · Esc steps back
+              Pick a block to explore · C connects it · ↑↓ then Enter follows a relation · Esc steps back
             </p>
           </Panel>
         )}

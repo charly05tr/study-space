@@ -5,12 +5,27 @@ import type { PositionedNode } from '../types';
 
 /** How far the camera settles from the node it framed. */
 const VIEWING_DISTANCE = 34;
-/** Fraction of the remaining distance covered each frame. */
-const EASING = 0.08;
+/** Long enough to read as travel, short enough not to be a wait. */
+const FLIGHT_MS = 650;
+
+/** Slow at both ends, quick through the middle. */
+const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
 interface OrbitLike {
   target: THREE.Vector3;
   update: () => void;
+  // Narrowed to the one event this needs: OrbitControls types its listeners
+  // against a keyed event map, so a plain `string` is not assignable.
+  addEventListener: (type: 'start', listener: () => void) => void;
+  removeEventListener: (type: 'start', listener: () => void) => void;
+}
+
+interface Flight {
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
+  elapsed: number;
 }
 
 /**
@@ -21,6 +36,11 @@ interface OrbitLike {
  * *to* things keeps every journey anchored to something the user chose, and the
  * approach itself is what reveals the labels.
  *
+ * Timed and eased, not a fixed fraction per frame. A `lerp(goal, 0.08)` never
+ * actually arrives — it approaches asymptotically, so the last stretch crawls
+ * and the camera reads as if it were stuck just short of the target. A duration
+ * with an ease has a real beginning and a real end.
+ *
  * The camera keeps its current direction and only closes the distance, so
  * arriving somewhere never spins the world around — the map the user has in
  * their head survives the trip.
@@ -30,36 +50,60 @@ export const useCameraFlight = (
   controls: React.RefObject<OrbitLike | null>,
 ) => {
   const { camera } = useThree();
-  const goal = useRef<THREE.Vector3 | null>(null);
-  const lookAt = useRef<THREE.Vector3 | null>(null);
+  const flight = useRef<Flight | null>(null);
 
   useEffect(() => {
     if (!target) return;
 
     const destination = new THREE.Vector3(target.x, target.y, target.z);
-    const direction = camera.position.clone().sub(controls.current?.target ?? new THREE.Vector3());
+    const origin = controls.current?.target ?? new THREE.Vector3();
+    const direction = camera.position.clone().sub(origin);
 
     // A degenerate direction happens only if the camera sits exactly on its own
     // target; any fixed axis is as good as another to back away along.
     if (direction.lengthSq() < 1e-6) direction.set(0, 0, 1);
 
-    goal.current = destination.clone().add(direction.normalize().multiplyScalar(VIEWING_DISTANCE));
-    lookAt.current = destination;
+    flight.current = {
+      from: camera.position.clone(),
+      to: destination.clone().add(direction.normalize().multiplyScalar(VIEWING_DISTANCE)),
+      fromTarget: origin.clone(),
+      toTarget: destination,
+      elapsed: 0,
+    };
   }, [target, camera, controls]);
 
-  useFrame(() => {
-    if (!goal.current || !lookAt.current) return;
+  /**
+   * Taking hold of the map abandons the trip.
+   *
+   * Otherwise a drag during a flight is two things writing to the same camera
+   * every frame, which is exactly the fight that makes a 3D view feel broken.
+   */
+  useEffect(() => {
+    const instance = controls.current;
+    if (!instance) return;
 
-    camera.position.lerp(goal.current, EASING);
+    const cancel = () => {
+      flight.current = null;
+    };
+    instance.addEventListener('start', cancel);
+    return () => instance.removeEventListener('start', cancel);
+  }, [controls]);
+
+  useFrame((_, delta) => {
+    const current = flight.current;
+    if (!current) return;
+
+    // Driven by elapsed time, not by frame count, so the same journey takes the
+    // same time on a 144Hz display as on a struggling one.
+    current.elapsed = Math.min(current.elapsed + delta * 1000, FLIGHT_MS);
+    const progress = ease(current.elapsed / FLIGHT_MS);
+
+    camera.position.lerpVectors(current.from, current.to, progress);
     if (controls.current) {
-      controls.current.target.lerp(lookAt.current, EASING);
+      controls.current.target.lerpVectors(current.fromTarget, current.toTarget, progress);
       controls.current.update();
     }
 
-    // Close enough that another frame would move it by less than a pixel.
-    if (camera.position.distanceTo(goal.current) < 0.05) {
-      goal.current = null;
-      lookAt.current = null;
-    }
+    if (current.elapsed >= FLIGHT_MS) flight.current = null;
   });
 };

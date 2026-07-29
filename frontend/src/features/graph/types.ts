@@ -34,6 +34,19 @@ export interface PositionedNode extends GraphNode {
   degree: number;
 }
 
+/**
+ * Drawing a relation, one click at a time.
+ *
+ * Not a drag: OrbitControls already owns dragging, and a drag across a three
+ * dimensional scene is ambiguous about depth anyway — you cannot tell which of
+ * two overlapping nodes you released over. Clicking is unambiguous and stays
+ * keyboard-reachable.
+ */
+export type Connecting =
+  | null
+  | { sourceId: string; targetId: null }
+  | { sourceId: string; targetId: string };
+
 export interface GraphLayout {
   nodes: PositionedNode[];
   /** Edges whose two ends both resolved to a placed node. */

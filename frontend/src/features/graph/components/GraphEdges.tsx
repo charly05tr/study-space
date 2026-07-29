@@ -78,8 +78,10 @@ export const GraphEdges = ({ layout, palette, focusedId }: GraphEdgesProps) => {
     <group>
       {groups.map(({ kind, geometry, highlighted }) => {
         const style = EDGE_STYLES[kind];
-        const color = style.tone === 'danger' ? palette.danger : palette.rule;
-        const opacity = dimmed && !highlighted ? style.opacity * 0.25 : style.opacity;
+        // `muted` rather than `rule`: the rule token is a hairline meant for
+        // borders and all but vanished against the paper at these opacities.
+        const color = style.tone === 'danger' ? palette.danger : palette.muted;
+        const opacity = dimmed && !highlighted ? style.opacity * 0.3 : style.opacity;
 
         return (
           <lineSegments key={kind} geometry={geometry}>

@@ -32,8 +32,8 @@ export const readPalette = (): GraphPalette => {
 };
 
 export interface EdgeStyle {
-  /** `danger` for opposition, `rule` for everything else. */
-  tone: 'rule' | 'danger';
+  /** `danger` for opposition, `muted` for everything else. */
+  tone: 'muted' | 'danger';
   /** null draws a solid line. */
   dash: { size: number; gap: number } | null;
   opacity: number;
@@ -48,12 +48,12 @@ export interface EdgeStyle {
  * reading the legend, so it gets the danger token.
  */
 export const EDGE_STYLES: Record<RelationKind, EdgeStyle> = {
-  relates: { tone: 'rule', dash: { size: 1.5, gap: 1.5 }, opacity: 0.35 },
-  supports: { tone: 'rule', dash: null, opacity: 0.55 },
-  contradicts: { tone: 'danger', dash: { size: 2.5, gap: 2 }, opacity: 0.7 },
-  defines: { tone: 'rule', dash: { size: 6, gap: 2 }, opacity: 0.5 },
-  example_of: { tone: 'rule', dash: { size: 0.6, gap: 2.2 }, opacity: 0.45 },
-  derives_from: { tone: 'rule', dash: { size: 4, gap: 1.5 }, opacity: 0.5 },
+  relates: { tone: 'muted', dash: { size: 1.5, gap: 1.5 }, opacity: 0.55 },
+  supports: { tone: 'muted', dash: null, opacity: 0.8 },
+  contradicts: { tone: 'danger', dash: { size: 2.5, gap: 2 }, opacity: 0.9 },
+  defines: { tone: 'muted', dash: { size: 6, gap: 2 }, opacity: 0.75 },
+  example_of: { tone: 'muted', dash: { size: 0.6, gap: 2.2 }, opacity: 0.65 },
+  derives_from: { tone: 'muted', dash: { size: 4, gap: 1.5 }, opacity: 0.75 },
 };
 
 /**
@@ -64,4 +64,4 @@ export const EDGE_STYLES: Record<RelationKind, EdgeStyle> = {
  * with a single link rather than sixteen — linear scaling makes hubs swallow
  * the scene.
  */
-export const nodeRadius = (degree: number): number => 1.1 + Math.sqrt(degree) * 0.7;
+export const nodeRadius = (degree: number): number => 1.9 + Math.sqrt(degree) * 0.8;
