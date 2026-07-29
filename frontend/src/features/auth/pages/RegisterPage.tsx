@@ -16,8 +16,6 @@ import { useRegisterMutation } from '../hooks/useAuthMutations';
 import { getApiErrorMessage, getFieldErrors } from '../../../lib/apiError';
 import type { RegisterPayload } from '../types';
 
-/** EmailRegisterSerializer rejects anything that is not exactly 8 characters. */
-const PHONE_LENGTH = 8;
 
 export const RegisterPage = () => {
   const navigate = useNavigate();
@@ -27,28 +25,18 @@ export const RegisterPage = () => {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
-  const [phoneError, setPhoneError] = useState<string>();
 
   const fieldErrors = getFieldErrors(register.error);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const trimmedPhone = phone.trim();
-    if (trimmedPhone && trimmedPhone.length !== PHONE_LENGTH) {
-      setPhoneError(`Phone must be exactly ${PHONE_LENGTH} digits.`);
-      return;
-    }
-    setPhoneError(undefined);
 
     const payload: RegisterPayload = {
       email: email.trim(),
       password,
       first_name: firstName.trim(),
       last_name: lastName.trim(),
-      // Omitted entirely when blank: the field is optional, but "" fails min_length.
-      ...(trimmedPhone ? { phone: trimmedPhone } : {}),
     };
 
     register.mutate(payload, {
@@ -107,16 +95,6 @@ export const RegisterPage = () => {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             error={fieldErrors.password}
-          />
-          <Input
-            label="Phone (optional)"
-            name="phone"
-            inputMode="numeric"
-            maxLength={PHONE_LENGTH}
-            hint={`${PHONE_LENGTH} digits`}
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            error={phoneError ?? fieldErrors.phone}
           />
 
           <Button type="submit" loading={register.isPending} className="mt-1">

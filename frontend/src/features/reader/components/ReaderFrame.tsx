@@ -145,6 +145,12 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
     const frameRequest = useRef<number | null>(null);
     const ready = useRef(false);
     const hoveredMark = useRef<HTMLElement | null>(null);
+    /**
+     * What the focus effect saw last time. Turning a page and entering focus
+     * mode both reach that effect, and only one of them should start the reader
+     * at the top of the page.
+     */
+    const previous = useRef({ mode, focusPage });
 
     // Read from inside frame listeners, which are attached once on load and
     // would otherwise capture the first render's props forever.
@@ -241,17 +247,21 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
     /**
      * Puts the reader back exactly where it was after a reflow: the anchor
      * gives the block, the stored remainder gives the position inside it.
+     *
+     * Returns false when there is nothing to restore, so callers that need the
+     * document to end up somewhere can fall back.
      */
     const restoreAnchor = useCallback((doc: Document) => {
       const view = doc.defaultView;
       const anchor = lastReported.current;
-      if (!view || !anchor) return;
+      if (!view || !anchor) return false;
 
       const element = doc.getElementById(anchor);
-      if (!element) return;
+      if (!element) return false;
 
       const top = element.getBoundingClientRect().top + view.scrollY;
       view.scrollTo({ top: Math.max(0, top + lastOffset.current), ...INSTANT });
+      return true;
     }, []);
 
     /**
@@ -422,6 +432,12 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       const doc = getDoc();
       if (!doc) return;
 
+      // A page turn is the only transition that belongs at the top of a page.
+      // Entering focus mode, and reflowing while already inside it, have to keep
+      // the reader on the line being read.
+      const turned = previous.current.mode === 'focus' && previous.current.focusPage !== focusPage;
+      previous.current = { mode, focusPage };
+
       applySettings(doc);
 
       if (mode !== 'focus') {
@@ -445,8 +461,19 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
         else delete element.dataset.focus;
       });
 
-      doc.defaultView?.scrollTo({ top: 0, ...INSTANT });
+      // After the pages above are hidden, so the offsets describe the layout
+      // the restore below is about to scroll through.
       measure(doc);
+
+      // Only the shown page is laid out: an anchor on any other page measures as
+      // a zero rect and would restore to a meaningless position.
+      const anchored =
+        lastReported.current !== null &&
+        pages[index].contains(doc.getElementById(lastReported.current));
+
+      if (!turned && anchored && restoreAnchor(doc)) return;
+
+      doc.defaultView?.scrollTo({ top: 0, ...INSTANT });
 
       const first = pages[index].querySelector<HTMLElement>(BLOCK_SELECTOR);
       if (first?.id && first.id !== lastReported.current) {
@@ -475,6 +502,16 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
 
         const pages = Array.from(doc.querySelectorAll<HTMLElement>('.pagina'));
         if (pages.length === 0) return 1;
+
+        // The block being read wins over the page covering most of the viewport.
+        // Both name a page, but only this one agrees with the anchor focus mode
+        // restores: choosing by area can land on the neighbouring page, and then
+        // there is no reading position left inside it to go back to.
+        const anchor = lastReported.current;
+        const block = anchor ? doc.getElementById(anchor) : null;
+        const owner = block?.closest<HTMLElement>('.pagina') ?? null;
+        const anchored = owner ? pages.indexOf(owner) : -1;
+        if (anchored !== -1) return anchored + 1;
 
         const boxes = pages.map((page) => {
           const rect = page.getBoundingClientRect();

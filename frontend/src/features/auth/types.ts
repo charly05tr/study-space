@@ -38,8 +38,6 @@ export interface RegisterPayload {
   password: string;
   first_name?: string;
   last_name?: string;
-  /** EmailRegisterSerializer pins this to exactly 8 characters when sent. */
-  phone?: string;
 }
 
 export interface ActivatePayload {
