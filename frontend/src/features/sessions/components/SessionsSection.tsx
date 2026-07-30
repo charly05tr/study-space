@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, ErrorState, Skeleton } from '../../../components/ui';
 import { getApiErrorMessage } from '../../../lib/apiError';
 import { DetailSection } from '../../studyspaces/components/DetailSection';
@@ -23,7 +24,10 @@ export const SessionsSection = ({ studyspaceId }: SessionsSectionProps) => {
   const active = useActiveSession(studyspaceId);
   const history = useSessionHistory(studyspaceId);
 
-  const sessions = history.data?.results ?? [];
+  // Only the most recent one here. This section sits above the sources and the
+  // notes, and a full history would push the material a scroll away — which is
+  // the opposite of what a hub page is for. The rest lives on its own page.
+  const latest = history.data?.results[0];
   const total = history.data?.count ?? 0;
 
   // Only once we KNOW there is none: offering "Start" while the answer is still
@@ -36,11 +40,21 @@ export const SessionsSection = ({ studyspaceId }: SessionsSectionProps) => {
       count={total}
       emptyMessage="No sessions yet. Start one to work in timed stretches."
       action={
-        canStart && (
-          <Button variant="quiet" size="sm" onClick={() => setStarting((open) => !open)}>
-            {starting ? 'Close' : 'Start session'}
-          </Button>
-        )
+        <span className="flex items-center gap-1">
+          {total > 0 && (
+            <Link
+              to={`/studyspace/${studyspaceId}/sessions`}
+              className="rounded-xs border border-transparent px-3 py-1.5 font-heading text-xs uppercase tracking-[0.14em] text-muted transition-colors duration-150 hover:border-rule hover:text-ink"
+            >
+              View all
+            </Link>
+          )}
+          {canStart && (
+            <Button variant="quiet" size="sm" onClick={() => setStarting((open) => !open)}>
+              {starting ? 'Close' : 'Start session'}
+            </Button>
+          )}
+        </span>
       }
       banner={
         <div className="flex flex-col gap-4">
@@ -71,21 +85,11 @@ export const SessionsSection = ({ studyspaceId }: SessionsSectionProps) => {
           onRetry={() => history.refetch()}
         />
       ) : (
-        <>
+        latest && (
           <ul>
-            {sessions.map((session) => (
-              <SessionRow key={session.id} session={session} />
-            ))}
+            <SessionRow session={latest} />
           </ul>
-
-          {/* Paged at ten. A link rather than a pager: the history is a record
-              to glance at, not a table to work through. */}
-          {total > sessions.length && (
-            <p className="pt-2 font-heading text-xs uppercase tracking-[0.14em] text-muted">
-              Showing {sessions.length} of {total}
-            </p>
-          )}
-        </>
+        )
       )}
     </DetailSection>
   );

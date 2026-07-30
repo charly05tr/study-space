@@ -38,12 +38,17 @@ export interface NoteUpdatePayload {
 }
 
 /**
- * NoteCreateSerializer. `content` is left out on purpose: a note is born empty
- * and Note.content defaults to `{}` — the editor fills it in afterwards.
+ * NoteCreateSerializer.
+ *
+ * `content` is optional because a blank note still arrives empty and lets
+ * Note.content keep its `{}` default. A template sends the tree it wants the
+ * note to be born as — already stamped with block ids, so the note is
+ * addressable from the map before anyone has typed in it.
  */
 export interface CreateNotePayload {
   title: string;
   studyspace: number;
+  content?: NoteDocument;
 }
 
 /**

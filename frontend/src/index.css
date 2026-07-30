@@ -210,6 +210,74 @@
 
 @layer components {
   /*
+    A note split in two.
+
+    Grid and not `columns`, which is the CSS property that sounds right and is
+    not: multi-column flows ONE stream of text through both sides, so the
+    reader's two lists would be halves of the same paragraph and nothing could
+    sit beside anything. These are two independent documents side by side.
+
+    The hairline between them is the whole visual idea, and it is a border on
+    the second column rather than on the container: on a narrow screen the two
+    stack, and a rule down the middle of a single column would be pointing at
+    nothing. It turns back into a rule above the lower half instead.
+
+    `min-width: 0` on the column because a grid child defaults to min-content
+    width, so one long unbroken word — a URL, a chemical name — would push the
+    column wider than its track and overflow the page.
+  */
+  .prose-note .note-columns {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    margin: 1.75em 0;
+  }
+
+  .prose-note .note-column {
+    min-width: 0;
+    border-top: 1px solid var(--color-rule);
+    padding-top: 1rem;
+  }
+
+  .prose-note .note-column:first-child {
+    border-top: none;
+    padding-top: 0;
+  }
+
+  @media (min-width: 40rem) {
+    .prose-note .note-columns {
+      /* Even halves. Cornell's narrow cue column is a paper convention born of
+         a fixed page width; on a screen that reflows, an off-centre split just
+         makes the left side unusable at small widths. */
+      grid-template-columns: 1fr 1fr;
+      gap: 2.5rem;
+    }
+
+    .prose-note .note-column {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .prose-note .note-column:last-child {
+      border-left: 1px solid var(--color-rule);
+      padding-left: 2.5rem;
+      /* The gap is already 2.5rem, so the rule would otherwise sit flush
+         against the right column's text. Half on each side of it. */
+      margin-left: -1.25rem;
+    }
+  }
+
+  /* The first block of a column carries the prose plugin's top margin, which
+     would drop it below the neighbouring column's first line. */
+  .prose-note .note-column > :first-child {
+    margin-top: 0;
+  }
+
+  .prose-note .note-column > :last-child {
+    margin-bottom: 0;
+  }
+
+  /*
     Empty-block placeholder. Without it a blank note gives the writer nothing to
     aim at, which is the one moment a blank page is hostile.
 

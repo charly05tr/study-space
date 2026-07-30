@@ -28,3 +28,15 @@ export const toEditorContent = (
 
   return generateUniqueIds(content, noteExtensions);
 };
+
+/**
+ * Stamps a template's blocks before the note is created.
+ *
+ * The same pass as above, for the same reason and one more: a templated note is
+ * saved with real content by a request that never went through an editor, so
+ * without this its blocks would reach the database with `attrs.id: null` and
+ * `extract_blocks` would skip every one of them. The note would sit in the
+ * studyspace and be absent from the map until someone typed in it.
+ */
+export const seedTemplate = (document: NoteDocument): NoteDocument =>
+  generateUniqueIds(document, noteExtensions);

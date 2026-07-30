@@ -365,6 +365,99 @@ class StudySessionApiTests(APITestCase):
         self.assertEqual(self.client.get(self.URL).status_code, 401)
 
 
+class ColumnLayoutIndexingTests(SimpleTestCase):
+    """El editor puede partir una nota en dos columnas; el mapa no debe notarlo.
+
+    `columns` y `column` son maquetado: no estan en INDEXED_TYPES ni llevan id.
+    Lo que importa es que el recorrido siga bajando por ellos, porque los
+    parrafos que viven adentro son bloques reales del grafo.
+    Ver frontend/src/features/notes/columnsNode.ts
+    """
+
+    def _document(self):
+        return {
+            'type': 'doc',
+            'content': [
+                {
+                    'type': 'columns',
+                    'content': [
+                        {
+                            'type': 'column',
+                            'content': [
+                                {
+                                    'type': 'heading',
+                                    'attrs': {'id': 'cue-head', 'level': 3},
+                                    'content': [{'type': 'text', 'text': 'Ideas'}],
+                                },
+                                {
+                                    'type': 'paragraph',
+                                    'attrs': {'id': 'cue-body'},
+                                    'content': [{'type': 'text', 'text': 'Por que hay paginacion'}],
+                                },
+                            ],
+                        },
+                        {
+                            'type': 'column',
+                            'content': [
+                                {
+                                    'type': 'paragraph',
+                                    'attrs': {'id': 'note-body'},
+                                    'content': [{'type': 'text', 'text': 'La MMU traduce'}],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {'type': 'horizontalRule'},
+                {
+                    'type': 'paragraph',
+                    'attrs': {'id': 'summary'},
+                    'content': [{'type': 'text', 'text': 'Resumen'}],
+                },
+            ],
+        }
+
+    def test_blocks_inside_columns_reach_the_index(self):
+        from apps.studyspace.services.block_service import extract_blocks
+
+        found = {block.id for block in extract_blocks(self._document())}
+        self.assertEqual(found, {'cue-head', 'cue-body', 'note-body', 'summary'})
+
+    def test_the_layout_containers_are_not_blocks_themselves(self):
+        from apps.studyspace.services.block_service import extract_blocks
+
+        types = {block.block_type for block in extract_blocks(self._document())}
+        self.assertNotIn('columns', types)
+        self.assertNotIn('column', types)
+
+    def test_reading_order_runs_down_one_column_then_the_next(self):
+        # Es el orden del documento, no el visual. Un mapa que numerara los
+        # bloques cruzando de columna en columna no describiria ninguna nota.
+        from apps.studyspace.services.block_service import extract_blocks
+
+        blocks = extract_blocks(self._document())
+        self.assertEqual(
+            [block.id for block in blocks],
+            ['cue-head', 'cue-body', 'note-body', 'summary'],
+        )
+
+    def test_a_mention_inside_a_column_belongs_to_its_own_paragraph(self):
+        from apps.studyspace.services.block_service import extract_links
+
+        document = self._document()
+        column = document['content'][0]['content'][1]
+        column['content'][0]['content'].append({
+            'type': 'blockLink',
+            'attrs': {'targetId': 'otro-bloque', 'label': 'MMU', 'kind': 'relates'},
+        })
+
+        links = extract_links(document)
+        self.assertEqual(len(links), 1)
+        # El contenedor no es origen valido: la arista nace del parrafo.
+        self.assertEqual(links[0].source_id, 'note-body')
+        self.assertEqual(links[0].target_id, 'otro-bloque')
+
+
 class ConverterRegistryTests(SimpleTestCase):
     def test_a_retired_converter_never_matches_a_stored_version(self):
         # 0 is the default of Source.converted_with, so no live converter may

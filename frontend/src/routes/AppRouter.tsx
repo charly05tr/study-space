@@ -17,6 +17,7 @@ import { StudyspacesPage } from '../features/studyspaces/pages/StudyspacesPage';
 import { CreateStudyspacePage } from '../features/studyspaces/pages/CreateStudyspacePage';
 import { StudyspaceDetailPage } from '../features/studyspaces/pages/StudyspaceDetailPage';
 import { ReaderPage } from '../features/reader/pages/ReaderPage';
+import { SessionsPage } from '../features/sessions/pages/SessionsPage';
 import { NotePage } from '../features/notes/pages/NotePage';
 import { LazyGraphPage } from './LazyGraphPage';
 
@@ -61,6 +62,9 @@ export const router = createBrowserRouter([
           // Nested under the studyspace so the sidebar keeps showing its
           // notes and sources: useActiveStudyspaceId matches with end:false.
           { path: '/studyspace/:studyspaceId/graph', element: <LazyGraphPage /> },
+          // Nested for the same reason as the map: the sidebar keeps showing
+          // the studyspace this history belongs to.
+          { path: '/studyspace/:studyspaceId/sessions', element: <SessionsPage /> },
           // El editor es escritura, no lectura: va en AppLayout como el hub, no
           // en ReaderLayout.
           { path: '/note/:noteId', element: <NotePage /> },

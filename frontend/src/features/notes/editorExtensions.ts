@@ -6,6 +6,7 @@ import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
 import { AnnotationNode } from './annotationNode';
 import { BlockLinkNode } from './blockLinkNode';
+import { Column, Columns } from './columnsNode';
 
 /**
  * Block types that receive a stable `id` attribute.
@@ -61,6 +62,11 @@ export const noteExtensions: Extensions = [
   // JSON to build the graph, so they have to survive any parse.
   // See extract_links in apps/studyspace/services/block_service.py
   BlockLinkNode,
+
+  // Layout, but still schema: a note stored with a two-column split has to come
+  // back as one. Parsed by any consumer, indexed by none — see columnsNode.ts.
+  Columns,
+  Column,
 
   /**
    * Stamps `attrs.id` (a UUID v4) onto every block listed above.

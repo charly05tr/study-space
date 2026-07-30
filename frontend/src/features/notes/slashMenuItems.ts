@@ -90,6 +90,12 @@ const BLOCK_ITEMS: Omit<SlashItem, 'key' | 'group'>[] = [
     run: (chain) => chain.setCodeBlock(),
   },
   {
+    title: 'Two columns',
+    hint: 'Split the page',
+    keywords: ['column', 'columns', 'split', 'side', 'cornell', 'grid', '2'],
+    run: (chain) => chain.setTwoColumns(),
+  },
+  {
     title: 'Divider',
     hint: 'Horizontal rule',
     keywords: ['hr', 'rule', 'separator', 'line', '---'],

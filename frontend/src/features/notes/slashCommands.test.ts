@@ -73,14 +73,41 @@ describe('slash item commands', () => {
     expect(nodes.some((node) => node.type === 'horizontalRule')).toBe(true);
   });
 
+  it('Two columns inserts a split of exactly two', () => {
+    const columns = runItem('Two columns').find((node) => node.type === 'columns');
+    expect(columns?.content?.map((node) => node.type)).toEqual(['column', 'column']);
+  });
+
+  /**
+   * The two items that produce no addressable block of their own.
+   *
+   * A rule carries no text to link. A column split carries text, but only its
+   * children's — it is layout, and an id on the container would draw the same
+   * words on the map twice. The test below covers what IS addressable inside it.
+   */
+  const LAYOUT_ONLY = new Set(['Divider', 'Two columns']);
+
   it('every item keeps a UniqueID on the block it produces', () => {
     // The whole point of the editor: a block the 3D map cannot address is a
     // block that did not really get created.
     for (const item of SLASH_ITEMS) {
-      if (item.title === 'Divider') continue; // a rule carries no text to link
+      if (LAYOUT_ONLY.has(item.title)) continue;
 
       const node = firstNode(item.title);
       expect(node.attrs?.id, `${item.title} has no id`).toEqual(expect.any(String));
+    }
+  });
+
+  it('a column split is unaddressable but everything written inside it is not', () => {
+    const columns = runItem('Two columns').find((node) => node.type === 'columns');
+
+    expect(columns?.attrs?.id).toBeUndefined();
+    for (const column of columns?.content ?? []) {
+      expect(column.attrs?.id).toBeUndefined();
+      // The paragraph waiting for the caret. This is the node the map draws,
+      // and extract_blocks reaches it by walking straight through the two
+      // containers above.
+      expect(column.content?.[0].attrs?.id).toEqual(expect.any(String));
     }
   });
 
