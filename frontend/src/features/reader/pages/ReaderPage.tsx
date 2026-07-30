@@ -10,6 +10,7 @@ import {
 import type { Annotation } from '../../annotations/types';
 import { AnnotationPanel } from '../components/AnnotationPanel';
 import { FocusControls } from '../components/FocusControls';
+import { ReaderColors } from '../components/ReaderColors';
 import { NoteTooltip } from '../components/NoteTooltip';
 import { ReaderFrame } from '../components/ReaderFrame';
 import type { ReaderFrameHandle, SelectionInfo } from '../components/ReaderFrame';
@@ -48,6 +49,8 @@ export const ReaderPage = () => {
   // through the panel's identity, or the other way round.
   const fontSize = useReaderPrefsStore((state) => state.fontSize);
   const adjustFontSize = useReaderPrefsStore((state) => state.adjustFontSize);
+  const pageColor = useReaderPrefsStore((state) => state.pageColor);
+  const textColor = useReaderPrefsStore((state) => state.textColor);
   const panelOpen = useReaderPrefsStore((state) => state.panelOpen);
   const setPanelOpen = useReaderPrefsStore((state) => state.setPanelOpen);
   const togglePanel = useReaderPrefsStore((state) => state.togglePanel);
@@ -266,6 +269,7 @@ export const ReaderPage = () => {
             >
               {dark ? 'Light' : 'Dark'}
             </Button>
+            <ReaderColors dark={dark} />
             <Button
               variant="quiet"
               size="sm"
@@ -287,6 +291,8 @@ export const ReaderPage = () => {
             initialAnchor={citationAnchor || positionQuery.data?.last_anchor || ''}
             fontSize={fontSize}
             dark={dark}
+            pageColor={pageColor}
+            textColor={textColor}
             mode={mode}
             focusPage={focusPage}
             annotations={annotations ?? NO_ANNOTATIONS}

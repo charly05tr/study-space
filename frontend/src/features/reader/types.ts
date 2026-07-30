@@ -1,3 +1,5 @@
+import type { ConverterMode } from '../studyspaces/types';
+
 /**
  * Payload of POST /sources/:id/convert-pdf-to-html/.
  *
@@ -8,6 +10,12 @@
  */
 export interface ReaderPayload {
   title: string;
+  /**
+   * Which converter produced `reader_html`. The frame reads the same fact off
+   * the document's own `data-converter` attribute — this is here for anything
+   * that has to know before the iframe has loaded.
+   */
+  converter_mode: ConverterMode;
   last_position: number;
   last_anchor: string;
   reader_html: string;

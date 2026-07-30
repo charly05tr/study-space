@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response 
 from apps.core.adapters.cloudinary_adapter import CloudinaryAdapter
+from apps.studyspace.services import converters
 from apps.studyspace.services.studyspace_service import StudyspaceService
 from apps.studyspace.api.filters import AnnotationFilter, BlockFilter, BlockLinkFilter
 from apps.studyspace.api.serializers import *
@@ -249,8 +250,13 @@ class SourceViewSet(viewsets.ModelViewSet):
         sources = self.service.get_user_sources(user=request.user)
         source = get_object_or_404(sources, pk=pk)
 
+        # Ausente = se reconvierte con el conversor que ya tenia la fuente.
+        mode = request.data.get('mode')
+        if mode is not None and not converters.is_known(mode):
+            raise ValidationError(f"Conversor desconocido: {mode}.")
+
         try:
-            self.service.convert(source=source)
+            self.service.convert(source=source, mode=mode)
         except Exception as error:
             return Response(
                 {"detail": f"The PDF could not be converted: {error}"},
@@ -261,6 +267,7 @@ class SourceViewSet(viewsets.ModelViewSet):
             'id': source.pk,
             'title': source.title,
             'is_converted': source.is_converted,
+            'converter_mode': source.converter_mode,
             'updated_at': source.updated_at,
         }, status=status.HTTP_200_OK)
 
@@ -292,6 +299,9 @@ class SourceViewSet(viewsets.ModelViewSet):
 
         return Response({
             'title': source.title,
+            # El lector aplica la tipografia distinto segun el conversor: uno
+            # escala el cuerpo de letra, el otro hace zoom sobre la pagina.
+            'converter_mode': source.converter_mode,
             'last_position': source.last_position,
             # Un documento se retoma por ancla, no por posicion: sin esto el
             # lector no puede volver al bloque donde quedo el usuario.

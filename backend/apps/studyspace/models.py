@@ -166,6 +166,14 @@ class Source(models.Model):
         VIDEO = 'mp4', 'Video'
         AUDIO = 'mp3', 'Audio'
 
+    class ConverterMode(models.TextChoices):
+        # Rebuilds the document as prose: reflows, scales with the font size,
+        # but reinterprets the structure it reads.
+        REFLOW = 'reflow', 'Reflowable text'
+        # Reproduces every page where the PDF drew it. Looks like the original;
+        # does not reflow, and vector graphics are not carried over.
+        LAYOUT = 'layout', 'Faithful page layout'
+
     title = models.CharField(max_length=255)
     source_type = models.CharField(max_length=10, choices=SourceType.choices)
     file = models.FileField(upload_to='sources/')
@@ -180,6 +188,15 @@ class Source(models.Model):
     # no tendría efecto sobre las fuentes ya convertidas.
     converted_with = models.PositiveSmallIntegerField(default=0)
 
+    # Qué conversor lo generó. Cada uno lleva su propia versión, así que sin
+    # este campo un HTML fiel hecho con la v1 se leería como un reflow v1 ya
+    # vigente y nunca se regeneraría.
+    converter_mode = models.CharField(
+        max_length=10,
+        choices=ConverterMode.choices,
+        default=ConverterMode.REFLOW,
+    )
+
 
     # El progreso se mide distinto según el medio: un audio o un video se retoman
     # en un segundo, un documento se retoma en un bloque del HTML convertido.
@@ -191,14 +208,17 @@ class Source(models.Model):
 
     @property
     def is_converted(self) -> bool:
-        """Hay HTML guardado y lo genero la version actual del conversor.
+        """Hay HTML guardado y lo genero la version actual de SU conversor.
 
-        Import local: services.pdf_service es pesado y solo hace falta al
-        consultar esto, no al cargar el modelo.
+        El registro de conversores no importa PyMuPDF a proposito: esto se lee
+        al serializar cada source de un studyspace.
         """
-        from apps.studyspace.services.pdf_service import CONVERTER_VERSION
+        from apps.studyspace.services.converters import version_of
 
-        return bool(self.converted_file) and self.converted_with == CONVERTER_VERSION
+        return (
+            bool(self.converted_file)
+            and self.converted_with == version_of(self.converter_mode)
+        )
 
 
 @receiver(post_delete, sender=Source)
@@ -228,7 +248,7 @@ class Annotation(models.Model):
     # acá: el HTML se reajusta al ancho de pantalla y al cuerpo de letra, así que
     # un x/y fijo deja de apuntar al mismo texto. El ancla se deriva del
     # contenido del bloque, por lo que sobrevive a reconvertir la fuente.
-    # Ver BlockAnchors en apps/studyspace/services/pdf_service.py
+    # Ver BlockAnchors en apps/studyspace/services/reader_anchors.py
     anchor = models.CharField(max_length=64)
 
     # Página del PDF original. Se guarda desnormalizada para poder mostrar

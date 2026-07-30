@@ -17,11 +17,19 @@ import {
   scrollToAnchor,
 } from '../annotationDom';
 import type { NoteHover } from '../noteCard';
+import { byTop, indexAt } from '../readerIndex';
+import { paletteFor } from '../readerPalette';
 import { READER_STYLE_ID, readerCss, type ReaderMode } from '../readerStyles';
+import { DEFAULT_FONT_SIZE } from '../store/readerPrefsStore';
 import { mostVisiblePageIndex } from '../visiblePage';
 
 interface Block {
   id: string;
+  top: number;
+}
+
+interface Page {
+  element: HTMLElement;
   top: number;
 }
 
@@ -34,30 +42,22 @@ interface Block {
 const INSTANT = { behavior: 'instant' } as const;
 
 /**
- * Dark palette over the converted document's own :root variables. 13.5:1 body,
- * 6.1:1 muted.
+ * The rest of the palette, derived once the reader picks its own two colours.
  *
- * --selection-tint is deliberately a deeper gold than --target-tint: a live
- * selection and a saved highlight sit side by side in this document, and if
- * they shared a colour there would be no telling which is which.
+ * Rules, tints and muted text are hand-tuned against the two palettes above; on
+ * an arbitrary pair they would be anything from invisible to unreadable. Mixing
+ * them out of the chosen ink and paper keeps every one of them at a fixed
+ * distance from both, whatever the reader picked.
  */
-const DARK_VARS: Record<string, string> = {
-  '--page-background': '#1c1b21',
-  '--text-color': '#e8e4da',
-  '--muted-color': '#a09a8c',
-  '--rule-color': '#34323a',
-  '--target-tint': '#4a4128',
-  '--selection-tint': '#5f5330', // 6.0:1 under --text-color
+const DERIVED_VARS: Record<string, string> = {
+  '--muted-color': 'color-mix(in srgb, var(--text-color) 68%, var(--page-background))',
+  '--rule-color': 'color-mix(in srgb, var(--text-color) 22%, var(--page-background))',
+  '--target-tint': 'color-mix(in srgb, var(--text-color) 20%, var(--page-background))',
+  '--selection-tint': 'color-mix(in srgb, var(--text-color) 32%, var(--page-background))',
 };
 
-const LIGHT_VARS: Record<string, string> = {
-  '--page-background': '#fdfbf7',
-  '--text-color': '#3d3b49',
-  '--muted-color': '#6f685c',
-  '--rule-color': '#e6e0d4',
-  '--target-tint': '#f3e8cd',
-  '--selection-tint': '#ecd694', // 7.6:1 under --text-color
-};
+/** Breathing room either side of a layout-converted page, in CSS pixels. */
+const PAGE_GUTTER = 24;
 
 export interface SelectionInfo {
   ranges: AnchorRange[];
@@ -81,6 +81,9 @@ interface ReaderFrameProps {
   initialAnchor: string;
   fontSize: number;
   dark: boolean;
+  /** Overrides the light/dark palette when set. Null follows the theme. */
+  pageColor: string | null;
+  textColor: string | null;
   mode: ReaderMode;
   /**
    * Controlled: which page focus mode shows. The frame never decides this on
@@ -124,6 +127,8 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       initialAnchor,
       fontSize,
       dark,
+      pageColor,
+      textColor,
       mode,
       focusPage,
       annotations,
@@ -138,7 +143,10 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
     ref,
   ) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const blocks = useRef<Block[]>([]);
+    /** Page boxes, measured once per reflow. */
+    const pages = useRef<Page[]>([]);
+    /** Blocks of a page, measured the first time the reader reaches it. */
+    const blocksByPage = useRef(new Map<number, Block[]>());
     const lastReported = useRef<string | null>(null);
     /** Pixels between the anchor block's top and the viewport top. */
     const lastOffset = useRef(0);
@@ -170,28 +178,133 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
     };
 
     /**
-     * Offsets measured once, then binary-searched on scroll. Reading a rect per
-     * block per scroll event is unusable at tens of thousands of blocks.
-     * Hidden blocks (focus mode) have no offsetParent and are skipped.
+     * Re-reads the page boxes. Every reflow has to go through here.
+     *
+     * Pages only — deliberately. Measuring every block meant a rect per block,
+     * and a rect read is a forced layout: on a layout-converted book, where a
+     * block is one drawn line, that is tens of thousands of them for a single
+     * call. It ran on load, on resize, on every page turn, and on every change
+     * to `applySettings` — which is why switching to dark mode used to freeze
+     * the reader for seconds on a long document.
+     *
+     * Blocks are measured one page at a time instead, on the way past. Pages
+     * hidden by focus mode have no offsetParent and are left out.
      */
     const measure = useCallback((doc: Document) => {
       const view = doc.defaultView;
       if (!view) return;
       const scrollY = view.scrollY;
-      blocks.current = Array.from(doc.querySelectorAll<HTMLElement>(BLOCK_SELECTOR))
+
+      pages.current = Array.from(doc.querySelectorAll<HTMLElement>('.pagina'))
         .filter((element) => element.offsetParent !== null)
         .map((element) => ({
-          id: element.id,
+          element,
           top: element.getBoundingClientRect().top + scrollY,
-        }));
+        }))
+        .sort(byTop);
+
+      // Every cached offset was measured against the layout being replaced.
+      blocksByPage.current.clear();
     }, []);
 
-    const applySettings = useCallback(
+    /**
+     * Blocks of one page, measured on first use and kept until the next reflow.
+     *
+     * Sorted rather than left in document order: the binary search needs it,
+     * and the two only agree while the page reads top to bottom — a
+     * layout-converted page emits its lines in reading order, so on a
+     * two-column page the whole second column follows the first while sitting
+     * above it.
+     */
+    const blocksOfPage = useCallback((index: number, view: Window): Block[] => {
+      const cached = blocksByPage.current.get(index);
+      if (cached) return cached;
+
+      const page = pages.current[index];
+      if (!page) return [];
+
+      const scrollY = view.scrollY;
+      const measured: Block[] = [];
+      let rendered = false;
+
+      page.element.querySelectorAll<HTMLElement>(BLOCK_SELECTOR).forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        if (rect.height > 0) rendered = true;
+        measured.push({ id: element.id, top: rect.top + scrollY });
+      });
+
+      // A page with nothing to point at has a real, permanent answer.
+      if (measured.length === 0) {
+        blocksByPage.current.set(index, measured);
+        return measured;
+      }
+
+      // Every block an empty rect means the browser has not laid this page out
+      // yet — `content-visibility: auto` releases a page's contents on the
+      // frame after it becomes relevant, and a synchronous scroll can land here
+      // first. Caching those offsets would pin the reading position to zero for
+      // the rest of the session; leaving it uncached costs one more query on
+      // the next tick, by which time the page is real.
+      if (!rendered) return [];
+
+      measured.sort(byTop);
+      blocksByPage.current.set(index, measured);
+      return measured;
+    }, []);
+
+    /**
+     * Colour only, and kept apart from the rest on purpose.
+     *
+     * Recolouring does not move a single line, so it must not drag a reflow
+     * behind it. While this lived together with the typography, changing the
+     * theme invalidated `applySettings`, which the layout effect below depends
+     * on — so every dark-mode toggle re-measured the whole document and rewrote
+     * its stylesheet. On a book that was seconds of frozen reader for a change
+     * the browser can paint on its own.
+     */
+    const applyPalette = useCallback(
       (doc: Document) => {
         const root = doc.documentElement;
-        const palette = dark ? DARK_VARS : LIGHT_VARS;
-        Object.entries(palette).forEach(([name, value]) => root.style.setProperty(name, value));
-        root.style.setProperty('--body-size', `${fontSize}px`);
+
+        Object.entries(paletteFor(dark)).forEach(([name, value]) =>
+          root.style.setProperty(name, value),
+        );
+
+        // After the palette, so a chosen colour wins, and before the derived
+        // tokens, which are expressed in terms of these two.
+        if (pageColor) root.style.setProperty('--page-background', pageColor);
+        if (textColor) root.style.setProperty('--text-color', textColor);
+        if (pageColor || textColor) {
+          Object.entries(DERIVED_VARS).forEach(([name, value]) =>
+            root.style.setProperty(name, value),
+          );
+        }
+      },
+      [dark, pageColor, textColor],
+    );
+
+    /**
+     * Everything that changes where the text sits: type size, page zoom, and
+     * the mode stylesheet. Every call here has to be followed by a re-measure.
+     */
+    const applyLayout = useCallback(
+      (doc: Document) => {
+        const root = doc.documentElement;
+        // Written by the layout converter. Absent on every reflowed document,
+        // including the ones converted before this existed.
+        const layout = root.dataset.converter === 'layout';
+
+        if (layout) {
+          // Nothing to grow: the type size is baked into the page. The same
+          // A+/A- drives the zoom instead, on top of the fit-to-width scale, so
+          // the control keeps meaning "make this bigger" in both converters.
+          const pageWidth = Number(root.dataset.pageWidth);
+          const available = root.clientWidth - PAGE_GUTTER * 2;
+          const fit = pageWidth > 0 && available > 0 ? available / pageWidth : 1;
+          root.style.setProperty('--page-zoom', (fit * (fontSize / DEFAULT_FONT_SIZE)).toFixed(4));
+        } else {
+          root.style.setProperty('--body-size', `${fontSize}px`);
+        }
 
         let style = doc.getElementById(READER_STYLE_ID) as HTMLStyleElement | null;
         if (!style) {
@@ -199,36 +312,36 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
           style.id = READER_STYLE_ID;
           doc.head.appendChild(style);
         }
-        style.textContent = readerCss(mode);
+
+        // Replacing a stylesheet restyles the document whether or not anything
+        // in it changed, and only `mode` can change it.
+        const css = readerCss(mode, layout);
+        if (style.textContent !== css) style.textContent = css;
       },
-      [dark, fontSize, mode],
+      [fontSize, mode],
     );
 
-    /** Index of the last measured block starting at or above a document position. */
-    const blockIndexAt = useCallback((position: number) => {
-      const list = blocks.current;
-      let low = 0;
-      let high = list.length - 1;
-      let found = 0;
-      while (low <= high) {
-        const middle = (low + high) >> 1;
-        if (list[middle].top <= position) {
-          found = middle;
-          low = middle + 1;
-        } else {
-          high = middle - 1;
-        }
-      }
-      return found;
-    }, []);
+    /**
+     * The frame's listeners are attached once, on load, so they close over the
+     * first render's callback forever. Resizing has to reach the current one:
+     * in a layout-converted document the fit-to-width zoom is a function of the
+     * viewport, and a stale closure would refit against the old size.
+     */
+    const applyLatest = useRef(applyLayout);
+    applyLatest.current = applyLayout;
 
     const reportAnchor = useCallback(
       (doc: Document) => {
         const view = doc.defaultView;
-        const list = blocks.current;
-        if (!view || list.length === 0) return;
+        if (!view || pages.current.length === 0) return;
 
-        const found = blockIndexAt(view.scrollY + 8);
+        const position = view.scrollY + 8;
+        // Two searches instead of one over everything: the page, then the block
+        // inside it. Only the page being read is ever measured.
+        const list = blocksOfPage(indexAt(pages.current, position), view);
+        if (list.length === 0) return;
+
+        const found = indexAt(list, position);
 
         // How far past the block's top the viewport sits. Blocks are taller than
         // a line, so restoring the block alone lands above where you were
@@ -241,7 +354,7 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
           onAnchorChange(anchor);
         }
       },
-      [blockIndexAt, onAnchorChange],
+      [blocksOfPage, onAnchorChange],
     );
 
     /**
@@ -259,8 +372,33 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       const element = doc.getElementById(anchor);
       if (!element) return false;
 
-      const top = element.getBoundingClientRect().top + view.scrollY;
-      view.scrollTo({ top: Math.max(0, top + lastOffset.current), ...INSTANT });
+      const offset = lastOffset.current;
+      const settle = () => {
+        const top = element.getBoundingClientRect().top + view.scrollY;
+        view.scrollTo({ top: Math.max(0, top + offset), ...INSTANT });
+      };
+
+      // A block with no box is one the browser has not laid out: a
+      // layout-converted document hands each page to `content-visibility:auto`,
+      // and the contents of a page nowhere near the viewport are skipped. The
+      // page box itself is always exact — its height is declared — so landing
+      // on the page is a valid scroll, and by the next frame the page is on
+      // screen and the block can be measured for real.
+      const page =
+        element.getBoundingClientRect().height === 0
+          ? element.closest<HTMLElement>('.pagina')
+          : null;
+
+      if (!page) {
+        settle();
+        return true;
+      }
+
+      view.scrollTo({
+        top: Math.max(0, page.getBoundingClientRect().top + view.scrollY),
+        ...INSTANT,
+      });
+      view.requestAnimationFrame(settle);
       return true;
     }, []);
 
@@ -376,6 +514,9 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       view.addEventListener(
         'resize',
         () => {
+          // Refit before restoring: the zoom decides where every block lands,
+          // so restoring first would anchor against the layout being replaced.
+          applyLatest.current(doc);
           restoreAnchor(doc);
           measure(doc);
         },
@@ -403,17 +544,22 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       // The layout effects below run after this, applying styles, paging and
       // highlights against a document that is now ready.
       ready.current = true;
-      applySettings(doc);
+      applyPalette(doc);
+      applyLayout(doc);
       repaint(doc);
 
+      // Pages before the anchor: the scroll below reads page boxes to reach a
+      // block whose own page may not be rendered yet.
+      measure(doc);
+
       if (mode === 'free' && initialAnchor) {
-        doc.getElementById(initialAnchor)?.scrollIntoView(INSTANT);
+        scrollToAnchor(doc, initialAnchor, INSTANT);
         lastReported.current = initialAnchor;
       }
-      measure(doc);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
-      applySettings,
+      applyLayout,
+      applyPalette,
       emitNoteHover,
       emitSelection,
       initialAnchor,
@@ -438,7 +584,7 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       const turned = previous.current.mode === 'focus' && previous.current.focusPage !== focusPage;
       previous.current = { mode, focusPage };
 
-      applySettings(doc);
+      applyLayout(doc);
 
       if (mode !== 'focus') {
         // Leaving focus, only one page had been laid out, so scrollY is a small
@@ -480,7 +626,13 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
         lastReported.current = first.id;
         onAnchorChange(first.id);
       }
-    }, [applySettings, focusPage, measure, mode, onAnchorChange, restoreAnchor]);
+    }, [applyLayout, focusPage, measure, mode, onAnchorChange, restoreAnchor]);
+
+    // Its own effect, with no re-measure: colour cannot move anything.
+    useEffect(() => {
+      const doc = getDoc();
+      if (doc) applyPalette(doc);
+    }, [applyPalette]);
 
     useEffect(() => {
       const doc = getDoc();
@@ -500,8 +652,11 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
         const view = doc?.defaultView;
         if (!doc || !view) return 1;
 
-        const pages = Array.from(doc.querySelectorAll<HTMLElement>('.pagina'));
-        if (pages.length === 0) return 1;
+        // The document's own list, not the measured one: this index has to line
+        // up with how the focus effect below numbers pages, and that walks
+        // every page including any the current mode is hiding.
+        const allPages = Array.from(doc.querySelectorAll<HTMLElement>('.pagina'));
+        if (allPages.length === 0) return 1;
 
         // The block being read wins over the page covering most of the viewport.
         // Both name a page, but only this one agrees with the anchor focus mode
@@ -510,10 +665,10 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
         const anchor = lastReported.current;
         const block = anchor ? doc.getElementById(anchor) : null;
         const owner = block?.closest<HTMLElement>('.pagina') ?? null;
-        const anchored = owner ? pages.indexOf(owner) : -1;
+        const anchored = owner ? allPages.indexOf(owner) : -1;
         if (anchored !== -1) return anchored + 1;
 
-        const boxes = pages.map((page) => {
+        const boxes = allPages.map((page) => {
           const rect = page.getBoundingClientRect();
           return { top: rect.top, bottom: rect.bottom };
         });

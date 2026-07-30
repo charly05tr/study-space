@@ -15,12 +15,22 @@ export interface NoteMinimal {
 /** Source.SourceType choices — the stored value, not the label. */
 export type SourceType = 'pdf' | 'mp4' | 'mp3';
 
+/**
+ * Source.ConverterMode choices.
+ *
+ * `reflow` rebuilds the PDF as prose: it rewraps to the window and scales with
+ * the font size. `layout` reproduces every page where the PDF drew it, so it
+ * looks like the original but neither rewraps nor carries vector graphics.
+ */
+export type ConverterMode = 'reflow' | 'layout';
+
 export interface SourceMinimal {
   id: number;
   title: string;
   source_type: SourceType;
-  /** Source.is_converted — stored HTML exists AND matches CONVERTER_VERSION. */
+  /** Source.is_converted — stored HTML exists AND matches its converter's version. */
   is_converted: boolean;
+  converter_mode: ConverterMode;
 }
 
 /** Reference.ReferenceType choices. */

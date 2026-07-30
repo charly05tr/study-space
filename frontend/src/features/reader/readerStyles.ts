@@ -11,11 +11,14 @@ export const READER_STYLE_ID = 'studyspace-reader-style';
  * defines on :root, so it follows the light/dark palette without a second
  * source of truth.
  */
-export const readerCss = (mode: ReaderMode) => `
-  /* The converted layout is a fixed measure centred in the viewport; a
-     horizontal bar here only ever means an overflowing figure or code block. */
+export const readerCss = (mode: ReaderMode, layout: boolean) => `
+  /* A reflowed document is a fixed measure centred in the viewport, so a
+     horizontal bar there only ever means an overflowing figure or code block.
+     A layout-converted one is a fixed-size page: zooming past the fit is a
+     legitimate reason to scroll sideways, and hiding it would cut the margin
+     off with no way to reach it. */
   html, body {
-    overflow-x: hidden;
+    overflow-x: ${layout ? 'auto' : 'hidden'};
   }
 
   /* Firefox */
@@ -27,7 +30,7 @@ export const readerCss = (mode: ReaderMode) => `
   /* WebKit and Blink */
   ::-webkit-scrollbar {
     width: 10px;
-    height: 0;
+    height: ${layout ? '10px' : '0'};
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -75,7 +78,7 @@ export const readerCss = (mode: ReaderMode) => `
     text-underline-offset: 0.25em;
   }
 
-  ${mode === 'focus' ? focusCss : freeCss}
+  ${mode === 'focus' ? (layout ? layoutFocusCss : focusCss) : freeCss}
 `;
 
 const freeCss = `
@@ -103,4 +106,18 @@ const focusCss = `
     /* Room for the floating controls so they never cover the last lines. */
     padding-bottom: 12vh;
   }
+`;
+
+/**
+ * Same hiding, no padding and no min-height.
+ *
+ * In a layout-converted document every line is absolutely positioned against
+ * the page box, and an absolute child is placed against its containing block's
+ * PADDING box — so the padding the rule above uses for breathing room would
+ * push every line of the page off the coordinates the PDF gave it. The page is
+ * already a fixed, complete rectangle; it needs no help filling the viewport.
+ */
+const layoutFocusCss = `
+  .pagina { display: none; }
+  .pagina[data-focus="1"] { display: block; }
 `;

@@ -174,7 +174,34 @@ export const noteMarkOf = (node: EventTarget | null): HTMLElement | null =>
 export const markById = (doc: Document, annotationId: number): HTMLElement | null =>
   doc.querySelector<HTMLElement>(`.${MARK_CLASS}[data-annotation-id="${annotationId}"]`);
 
-/** Scrolls to the block that owns an annotation. */
-export const scrollToAnchor = (doc: Document, anchor: string) => {
-  doc.getElementById(anchor)?.scrollIntoView({ block: 'center' });
+/**
+ * Scrolls to a block, whether or not its page has been rendered yet.
+ *
+ * A layout-converted document hands every page to `content-visibility: auto`,
+ * so the contents of a page the reader is nowhere near are skipped and a block
+ * inside one has no box to scroll to. Its page always does — the height is
+ * declared on the element — so the jump is taken in two steps: land on the
+ * page, then centre on the block once the browser has laid the page out.
+ */
+export const scrollToAnchor = (
+  doc: Document,
+  anchor: string,
+  options: ScrollIntoViewOptions = { block: 'center' },
+) => {
+  const element = doc.getElementById(anchor);
+  if (!element) return;
+
+  if (element.getBoundingClientRect().height > 0) {
+    element.scrollIntoView(options);
+    return;
+  }
+
+  const page = element.closest('.pagina');
+  if (!page) {
+    element.scrollIntoView(options);
+    return;
+  }
+
+  page.scrollIntoView({ ...options, block: 'start' });
+  doc.defaultView?.requestAnimationFrame(() => element.scrollIntoView(options));
 };

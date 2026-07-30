@@ -40,7 +40,7 @@ class SourceMinimalSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Source
-        fields = ['id', 'title', 'source_type', 'is_converted']
+        fields = ['id', 'title', 'source_type', 'is_converted', 'converter_mode']
         
         
 class ReferenceSerializer(serializers.ModelSerializer):
@@ -124,15 +124,19 @@ class SourceSerializer(serializers.ModelSerializer):
             'source_type', 
             'file', 
             'study_space',
-            'converted_file', 
-            'last_position', 
-            'last_anchor', 
+            'converted_file',
+            'converter_mode',
+            'last_position',
+            'last_anchor',
             'updated_at'
         ]
-        # Estos campos nunca deberían modificarse manualmente desde la API general
+        # Estos campos nunca deberían modificarse manualmente desde la API general.
+        # converter_mode incluido: cambiarlo sin reconvertir dejaria el HTML
+        # guardado describiendo un conversor que no lo genero.
         read_only_fields = [
-            'id', 
-            'converted_file', 
+            'id',
+            'converted_file',
+            'converter_mode',
             'updated_at'
         ]
 

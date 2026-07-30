@@ -1,5 +1,5 @@
 import axios from '../../../config/axios';
-import type { ConvertResult, CreateSourcePayload } from '../types';
+import type { ConvertPayload, ConvertResult, CreateSourcePayload } from '../types';
 import { SUPPORTED_SOURCE_TYPE } from '../types';
 
 const BASE_URL = '/sources';
@@ -24,11 +24,17 @@ export const sourcesApi = {
     return response.data;
   },
 
-  convert: async (sourceId: number): Promise<ConvertResult> => {
-    const response = await axios.post(`${BASE_URL}/${sourceId}/convert/`, null, {
-      // Converting a book is slow; this endpoint returns status, not the HTML.
-      timeout: 300000,
-    });
+  convert: async ({ sourceId, mode }: ConvertPayload): Promise<ConvertResult> => {
+    const response = await axios.post(
+      `${BASE_URL}/${sourceId}/convert/`,
+      // Omitted rather than null: the backend reads an absent mode as "keep the
+      // converter this source already has".
+      mode ? { mode } : {},
+      {
+        // Converting a book is slow; this endpoint returns status, not the HTML.
+        timeout: 300000,
+      },
+    );
     return response.data;
   },
 };
