@@ -14,6 +14,7 @@ import { formatDate } from '../../../lib/formatDate';
 import { GraphSectionMount } from '../../graph/components/GraphSectionMount';
 import { AddNoteForm } from '../../notes/components/AddNoteForm';
 import { NoteRow } from '../../notes/components/NoteRow';
+import { SessionsSection } from '../../sessions/components/SessionsSection';
 import { AddSourceForm } from '../../sources/components/AddSourceForm';
 import { SourceRow } from '../../sources/components/SourceRow';
 import { DetailRow, DetailSection } from '../components/DetailSection';
@@ -96,6 +97,13 @@ export const StudyspaceDetailPage = () => {
 
         <Divider ornament className="max-w-40" />
       </header>
+
+      {/*
+        Full width, and above the material on purpose: the running session is
+        what you are doing, the lists below are what you are doing it with. Half
+        a column would also crop the dial.
+      */}
+      <SessionsSection studyspaceId={id} />
 
       <div className="grid gap-8 lg:grid-cols-2">
         <DetailSection

@@ -1,6 +1,6 @@
 from django_filters import rest_framework as filters
 
-from apps.studyspace.models import Annotation, Block, BlockLink
+from apps.studyspace.models import Annotation, Block, BlockLink, StudySession
 
 
 class AnnotationFilter(filters.FilterSet):
@@ -32,6 +32,21 @@ class BlockFilter(filters.FilterSet):
     class Meta:
         model = Block
         fields = ['studyspace', 'note', 'block_type', 'q']
+
+
+class StudySessionFilter(filters.FilterSet):
+    """El historial se lee por espacio de estudio.
+
+    `active` es un filtro y no una ruta aparte porque la lista y la sesion
+    abierta son la misma consulta con un recorte distinto: al abrir la pagina
+    hay que saber si quedo algo corriendo antes de ofrecer empezar de nuevo.
+    """
+
+    active = filters.BooleanFilter(field_name='finished_at', lookup_expr='isnull')
+
+    class Meta:
+        model = StudySession
+        fields = ['studyspace', 'active']
 
 
 class BlockLinkFilter(filters.FilterSet):

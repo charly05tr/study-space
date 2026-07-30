@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from apps.studyspace.models import (
     Studyspace, Note, Source, NoteImage, Annotation, Reference, Block, BlockLink,
+    StudySession,
 )
 
 
@@ -278,3 +279,57 @@ class GraphEdgeSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlockLink
         fields = ['id', 'source', 'target', 'kind', 'origin']
+
+
+def _to_minutes(duration) -> int:
+    return round(duration.total_seconds() / 60)
+
+
+class StudySessionSerializer(serializers.ModelSerializer):
+    """Lectura de una sesion, para el temporizador y para el historial.
+
+    Las duraciones viajan en MINUTOS y no como DurationField. El cliente las
+    usa para dos cosas -- llenar un input numerico y armar un reloj -- y en las
+    dos un entero es el dato; el formato "HH:MM:SS" de DRF obligaria al front a
+    parsear una cadena para volver al mismo numero que el usuario escribio.
+    """
+
+    focus_minutes = serializers.SerializerMethodField()
+    rest_minutes = serializers.SerializerMethodField()
+    is_active = serializers.BooleanField(read_only=True)
+    studyspace_title = serializers.CharField(source='studyspace.title', read_only=True)
+
+    class Meta:
+        model = StudySession
+        fields = [
+            'id',
+            'goal',
+            'studyspace',
+            'studyspace_title',
+            'focus_minutes',
+            'rest_minutes',
+            'completed_pomodoros',
+            'is_active',
+            'created_at',
+            'finished_at',
+        ]
+
+    def get_focus_minutes(self, session) -> int:
+        return _to_minutes(session.focus_time_duration)
+
+    def get_rest_minutes(self, session) -> int:
+        return _to_minutes(session.rest_time_duration)
+
+
+class StudySessionCreateSerializer(serializers.Serializer):
+    """Lo unico que se elige al empezar: que vas a hacer y con que ritmo.
+
+    Serializer plano y no ModelSerializer: los dos campos de duracion no se
+    escriben directo en el modelo, los arma el servicio a partir de minutos, y
+    el rango valido es una regla de dominio que vive ahi.
+    """
+
+    goal = serializers.CharField(max_length=255)
+    studyspace = serializers.PrimaryKeyRelatedField(queryset=Studyspace.objects.all())
+    focus_minutes = serializers.IntegerField()
+    rest_minutes = serializers.IntegerField()

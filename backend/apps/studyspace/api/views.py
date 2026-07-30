@@ -7,11 +7,17 @@ from rest_framework.response import Response
 from apps.core.adapters.cloudinary_adapter import CloudinaryAdapter
 from apps.studyspace.services import converters
 from apps.studyspace.services.studyspace_service import StudyspaceService
-from apps.studyspace.api.filters import AnnotationFilter, BlockFilter, BlockLinkFilter
+from apps.studyspace.api.filters import (
+    AnnotationFilter,
+    BlockFilter,
+    BlockLinkFilter,
+    StudySessionFilter,
+)
 from apps.studyspace.api.serializers import *
 from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.source_service import SourceService
 from apps.studyspace.services.annotation_service import AnnotationService
+from apps.studyspace.services.study_session_service import StudySessionService
 
 
 class StudyspaceViewSet(viewsets.ModelViewSet):
@@ -309,6 +315,71 @@ class SourceViewSet(viewsets.ModelViewSet):
             'reader_html': reader_html
         }, status=status.HTTP_200_OK)
         
+
+class StudySessionViewSet(
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
+    """Sesiones de estudio: empezar, contar ciclos, cerrar, y el historial.
+
+    Sin update: una sesion terminada es un registro de lo que paso, y la unica
+    escritura legitima mientras corre -- sumar un pomodoro -- tiene su propia
+    accion porque el servidor la incrementa, no la recibe.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = StudySessionSerializer
+    filterset_class = StudySessionFilter
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = StudySessionService()
+        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+
+    def get_queryset(self):
+        return self.service.get_user_sessions(user=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StudySessionCreateSerializer
+        return StudySessionSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # Sin esto se podria abrir una sesion en el studyspace de otra cuenta
+        # pasando su id: get_queryset filtra la lectura, no la escritura. Mismo
+        # guard que NoteViewSet.create y AnnotationViewSet.perform_create.
+        studyspace = data['studyspace']
+        owned = self.studyspace_service.get_user_studyspaces(user=request.user)
+        if not owned.filter(pk=studyspace.pk).exists():
+            raise ValidationError("El studyspace no existe o no te pertenece.")
+
+        session = self.service.start(
+            studyspace=studyspace,
+            goal=data['goal'],
+            focus_minutes=data['focus_minutes'],
+            rest_minutes=data['rest_minutes'],
+        )
+
+        return Response(
+            StudySessionSerializer(session).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['post'], url_path='complete-pomodoro')
+    def complete_pomodoro(self, request, pk=None):
+        session = self.service.complete_pomodoro(session=self.get_object())
+        return Response(StudySessionSerializer(session).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='finish')
+    def finish(self, request, pk=None):
+        session = self.service.finish(session=self.get_object())
+        return Response(StudySessionSerializer(session).data, status=status.HTTP_200_OK)
+
 
 class BlockViewSet(mixins.UpdateModelMixin, viewsets.ReadOnlyModelViewSet):
     """El contenido nace del documento; solo la visibilidad en el mapa se edita.

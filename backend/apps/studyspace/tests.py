@@ -1,7 +1,10 @@
 import re
+from datetime import timedelta
 
 import fitz
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
+from rest_framework.exceptions import ValidationError
+from rest_framework.test import APITestCase
 
 from apps.studyspace.services import converters
 from apps.studyspace.services.pdf_layout_service import (
@@ -125,6 +128,241 @@ class LayoutConverterTests(SimpleTestCase):
     def test_an_empty_page_still_produces_a_pagina(self):
         html = pdf_to_layout_html(_pdf_bytes([("", (0, 0, 0))]))
         self.assertIn('id="pagina-1"', html)
+
+
+class StudySessionServiceTests(TestCase):
+    def setUp(self):
+        from apps.studyspace.models import Studyspace
+        from apps.studyspace.services.study_session_service import StudySessionService
+        from apps.users.models import User
+
+        self.service = StudySessionService()
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.other = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+
+    def _start(self, goal="Leer el capitulo 2", focus=50, rest=10):
+        return self.service.start(
+            studyspace=self.studyspace, goal=goal, focus_minutes=focus, rest_minutes=rest
+        )
+
+    def test_minutes_are_stored_as_durations(self):
+        session = self._start(focus=25, rest=5)
+        self.assertEqual(session.focus_time_duration, timedelta(minutes=25))
+        self.assertEqual(session.rest_time_duration, timedelta(minutes=5))
+
+    def test_a_new_session_starts_open_and_empty(self):
+        session = self._start()
+        self.assertTrue(session.is_active)
+        self.assertEqual(session.completed_pomodoros, 0)
+        self.assertIsNone(session.finished_at)
+
+    def test_a_second_session_cannot_open_while_one_is_running(self):
+        # Dos abiertas a la vez no son dos sesiones: son una y una sin cerrar.
+        self._start()
+        with self.assertRaises(ValidationError):
+            self._start(goal="Otra cosa")
+
+    def test_a_new_session_opens_once_the_previous_one_is_closed(self):
+        self.service.finish(self._start())
+        self.assertTrue(self._start(goal="Segunda").is_active)
+
+    def test_a_running_session_in_another_studyspace_does_not_block(self):
+        from apps.studyspace.models import Studyspace
+
+        self._start()
+        other_space = Studyspace.objects.create(title="Redes", description="", user=self.user)
+        self.assertIsNotNone(
+            self.service.start(
+                studyspace=other_space, goal="Capa 3", focus_minutes=25, rest_minutes=5
+            )
+        )
+
+    def test_completing_a_pomodoro_counts_it(self):
+        session = self._start()
+        self.service.complete_pomodoro(session)
+        self.service.complete_pomodoro(session)
+        self.assertEqual(session.completed_pomodoros, 2)
+
+    def test_a_second_tab_cannot_overwrite_the_count(self):
+        # El contador lo incrementa la base. Con `session.completed + 1` esta
+        # copia vieja escribiria 1 y borraria los otros dos ciclos.
+        from apps.studyspace.models import StudySession
+
+        session = self._start()
+        stale = StudySession.objects.get(pk=session.pk)
+        self.service.complete_pomodoro(session)
+        self.service.complete_pomodoro(session)
+
+        self.service.complete_pomodoro(stale)
+        session.refresh_from_db()
+        self.assertEqual(session.completed_pomodoros, 3)
+
+    def test_a_closed_session_counts_nothing_more(self):
+        session = self.service.finish(self._start())
+        with self.assertRaises(ValidationError):
+            self.service.complete_pomodoro(session)
+
+    def test_finishing_is_idempotent(self):
+        # Se llama tambien al salir de la pagina, y ese camino puede repetirse.
+        session = self.service.finish(self._start())
+        closed_at = session.finished_at
+        self.assertEqual(self.service.finish(session).finished_at, closed_at)
+
+    def test_durations_outside_the_supported_range_are_rejected(self):
+        for focus, rest in ((0, 10), (50, 0), (181, 10), (50, 181), (-5, 10)):
+            with self.subTest(focus=focus, rest=rest):
+                with self.assertRaises(ValidationError):
+                    self.service.start(
+                        studyspace=self.studyspace,
+                        goal="x",
+                        focus_minutes=focus,
+                        rest_minutes=rest,
+                    )
+
+    def test_a_rejected_duration_leaves_no_session_behind(self):
+        from apps.studyspace.models import StudySession
+
+        with self.assertRaises(ValidationError):
+            self._start(focus=0)
+        self.assertEqual(StudySession.objects.count(), 0)
+
+    def test_sessions_are_scoped_to_their_owner(self):
+        self._start()
+        self.assertEqual(self.service.get_user_sessions(self.user).count(), 1)
+        self.assertEqual(self.service.get_user_sessions(self.other).count(), 0)
+
+    def test_history_reads_newest_first(self):
+        first = self.service.finish(self._start(goal="Primera"))
+        second = self._start(goal="Segunda")
+        self.assertEqual(
+            [s.pk for s in self.service.get_user_sessions(self.user)],
+            [second.pk, first.pk],
+        )
+
+    def test_the_active_session_is_the_open_one(self):
+        self.service.finish(self._start(goal="Cerrada"))
+        running = self._start(goal="Abierta")
+        self.assertEqual(self.service.active_session(self.studyspace), running)
+
+    def test_there_is_no_active_session_once_everything_is_closed(self):
+        self.service.finish(self._start())
+        self.assertIsNone(self.service.active_session(self.studyspace))
+
+
+class StudySessionApiTests(APITestCase):
+    URL = '/api/study-sessions/'
+
+    def setUp(self):
+        from apps.studyspace.models import Studyspace
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+        self.client.force_authenticate(self.user)
+
+    def _start(self, **overrides):
+        payload = {
+            'goal': 'Leer el capitulo 2',
+            'studyspace': self.studyspace.pk,
+            'focus_minutes': 25,
+            'rest_minutes': 5,
+        }
+        payload.update(overrides)
+        return self.client.post(self.URL, payload, format='json')
+
+    def test_starting_a_session_returns_it_in_minutes(self):
+        response = self._start()
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body['focus_minutes'], 25)
+        self.assertEqual(body['rest_minutes'], 5)
+        self.assertTrue(body['is_active'])
+        self.assertEqual(body['completed_pomodoros'], 0)
+
+    def test_a_second_session_is_refused_while_one_runs(self):
+        self._start()
+        self.assertEqual(self._start(goal="Otra").status_code, 400)
+
+    def test_minutes_outside_the_range_are_refused(self):
+        self.assertEqual(self._start(focus_minutes=999).status_code, 400)
+
+    def test_completing_a_pomodoro_is_counted_by_the_server(self):
+        session = self._start().json()
+        response = self.client.post(f"{self.URL}{session['id']}/complete-pomodoro/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['completed_pomodoros'], 1)
+
+    def test_finishing_closes_the_session_and_can_repeat(self):
+        session = self._start().json()
+        first = self.client.post(f"{self.URL}{session['id']}/finish/")
+        self.assertEqual(first.status_code, 200)
+        self.assertFalse(first.json()['is_active'])
+        self.assertIsNotNone(first.json()['finished_at'])
+
+        # El front la cierra tambien al salir de la pagina, y ese camino repite.
+        again = self.client.post(f"{self.URL}{session['id']}/finish/")
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()['finished_at'], first.json()['finished_at'])
+
+    def test_a_closed_session_counts_nothing_more(self):
+        session = self._start().json()
+        self.client.post(f"{self.URL}{session['id']}/finish/")
+        self.assertEqual(
+            self.client.post(f"{self.URL}{session['id']}/complete-pomodoro/").status_code, 400
+        )
+
+    def test_the_active_filter_finds_only_the_open_one(self):
+        session = self._start().json()
+        query = {'studyspace': self.studyspace.pk, 'active': 'true'}
+        self.assertEqual(self.client.get(self.URL, query).json()['count'], 1)
+
+        self.client.post(f"{self.URL}{session['id']}/finish/")
+        self.assertEqual(self.client.get(self.URL, query).json()['count'], 0)
+        # Cerrada sigue en el historial: lo que desaparece es "la que corre".
+        self.assertEqual(
+            self.client.get(self.URL, {'studyspace': self.studyspace.pk}).json()['count'], 1
+        )
+
+    def test_a_session_is_not_editable(self):
+        session = self._start().json()
+        response = self.client.patch(
+            f"{self.URL}{session['id']}/", {'goal': 'otra cosa'}, format='json'
+        )
+        self.assertEqual(response.status_code, 405)
+
+    def test_another_account_neither_sees_nor_touches_the_sessions(self):
+        from apps.users.models import User
+
+        session = self._start().json()
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(intruder)
+
+        self.assertEqual(
+            self.client.get(self.URL, {'studyspace': self.studyspace.pk}).json()['count'], 0
+        )
+        self.assertEqual(
+            self.client.post(f"{self.URL}{session['id']}/finish/").status_code, 404
+        )
+        # get_queryset filtra la lectura, no la escritura: sin el guard del
+        # viewset se podria abrir una sesion en el espacio de otra cuenta.
+        self.assertEqual(self._start(goal="ajeno").status_code, 400)
+
+    def test_anonymous_requests_are_rejected(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.URL).status_code, 401)
 
 
 class ConverterRegistryTests(SimpleTestCase):
