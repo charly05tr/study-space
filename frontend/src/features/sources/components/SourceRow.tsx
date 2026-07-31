@@ -55,9 +55,9 @@ export const SourceRow = ({ source, studyspaceId }: SourceRowProps) => {
       <span className="min-w-0 flex-1 truncate text-ink">{source.title}</span>
 
       <span className="flex shrink-0 flex-wrap items-center gap-2">
-        <Badge variant={source.is_converted ? 'success' : 'neutral'}>
+        {/* <Badge variant={source.is_converted ? 'success' : 'neutral'}>
           {source.is_converted ? 'Ready' : 'Not converted'}
-        </Badge>
+        </Badge> */}
         <Badge>{SOURCE_TYPE_LABEL[source.source_type] ?? source.source_type}</Badge>
 
         {isPdf && (

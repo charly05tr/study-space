@@ -15,12 +15,24 @@ interface GraphSceneProps {
   showEdges: boolean;
   onPick: (id: string | null) => void;
   onNodeMenu: (id: string, x: number, y: number) => void;
+  /** The context died and is not coming back; only a fresh canvas will do. */
+  onContextUnrecoverable: () => void;
 }
 
 /** Anything further than this from the focus stays a point, not a word. */
 const LABEL_RADIUS = 46;
 /** Ceiling on labels, so a hub with forty links does not become a wall of text. */
 const MAX_LABELS = 14;
+
+/**
+ * How long to wait for the browser to hand the context back before rebuilding.
+ *
+ * Long enough for a genuine loss — a GPU reset, a laptop waking up — to restore
+ * itself without the scene being thrown away, and short enough that a context
+ * killed deliberately, which is never restored, does not leave a dead map on
+ * screen while the user is looking at it.
+ */
+const RECOVERY_GRACE = 600;
 
 export const GraphScene = ({
   layout,
@@ -29,8 +41,90 @@ export const GraphScene = ({
   showEdges,
   onPick,
   onNodeMenu,
+  onContextUnrecoverable,
 }: GraphSceneProps) => {
-  const { camera } = useThree();
+  const { camera, gl, invalidate } = useThree();
+
+  /**
+   * Keeps picking working when the render loop is not.
+   *
+   * Raycasting is built from the camera's world matrix, and that matrix is
+   * normally refreshed as a side effect of rendering a frame. Lose the WebGL
+   * context — which a page holding two canvases does eventually, and which the
+   * console announces as "THREE.WebGLRenderer: Context Lost" — and the loop
+   * stops updating it while the last frame stays on screen. The map then looks
+   * perfectly alive and every click is tested against where the camera used to
+   * be, so they land on nothing. It is the same failure the initial framing
+   * effect below already had to defend against, arriving by a different road.
+   *
+   * Capture phase, so it runs before r3f's own listener builds the ray.
+   */
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const refresh = () => camera.updateMatrixWorld();
+
+    canvas.addEventListener('pointerdown', refresh, { capture: true });
+    canvas.addEventListener('pointermove', refresh, { capture: true });
+    return () => {
+      canvas.removeEventListener('pointerdown', refresh, { capture: true });
+      canvas.removeEventListener('pointermove', refresh, { capture: true });
+    };
+  }, [gl, camera]);
+
+  /**
+   * Brings the map back after the WebGL context dies under it.
+   *
+   * This is not defensive programming for a rare driver hiccup — it happens on
+   * ordinary navigation, and the cause is in r3f itself. Its teardown defers
+   * cleanup by half a second with no guard:
+   *
+   *     setTimeout(() => { state.gl?.forceContextLoss(); _roots.delete(canvas) }, 500)
+   *
+   * while `createRoot` REUSES the previous renderer whenever the canvas is
+   * still in `_roots`. Mount a canvas, unmount it, and mount another onto the
+   * same DOM element inside that window — which is what a remount does — and
+   * the stray timeout fires `forceContextLoss()` on the renderer that is now
+   * live. The console says so twice: "R3F.createRoot should only be called
+   * once!" on the way in, "THREE.WebGLRenderer: Context Lost" on the way out.
+   *
+   * What that leaves behind is the nastiest possible state: the last frame
+   * stays on screen, so the map looks perfectly alive, but the render loop has
+   * stopped refreshing the camera's world matrix — and picking is built from
+   * that matrix. Every click is then tested against where the camera used to
+   * be and lands on nothing.
+   *
+   * The first move is still to cancel the event, which is the only thing that
+   * lets the browser offer the context back. But a context killed on purpose is
+   * never offered back, so after a short grace we give up and ask to be rebuilt
+   * on a FRESH canvas element — the one thing that guarantees r3f cannot hand
+   * us the poisoned renderer again, since `_roots` is keyed by that element.
+   */
+  useEffect(() => {
+    const canvas = gl.domElement;
+    let recovery: number | undefined;
+
+    const onLost = (event: Event) => {
+      event.preventDefault();
+      window.clearTimeout(recovery);
+      recovery = window.setTimeout(onContextUnrecoverable, RECOVERY_GRACE);
+    };
+
+    const onRestored = () => {
+      window.clearTimeout(recovery);
+      // The loop resumes on its own, but the matrix it left stale is the one
+      // picking reads, and nothing else will touch it until the camera moves.
+      camera.updateMatrixWorld();
+      invalidate();
+    };
+
+    canvas.addEventListener('webglcontextlost', onLost);
+    canvas.addEventListener('webglcontextrestored', onRestored);
+    return () => {
+      window.clearTimeout(recovery);
+      canvas.removeEventListener('webglcontextlost', onLost);
+      canvas.removeEventListener('webglcontextrestored', onRestored);
+    };
+  }, [gl, camera, invalidate, onContextUnrecoverable]);
   // Typed off the component rather than reaching into three-stdlib: the impl
   // package is a transitive dependency, so importing it directly would break
   // the moment drei changed how it is vendored.

@@ -36,10 +36,33 @@ interface GraphHudProps {
   candidates?: React.ReactNode;
 }
 
-const Panel = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+/**
+ * `passive` is a panel that reports and never receives input.
+ *
+ * It exists because a panel floating over the canvas SWALLOWS every click that
+ * lands on it, and a node drawn behind one simply cannot be picked — which read
+ * as the map ignoring the mouse at random, and only on the full page, since the
+ * embedded preview carries no HUD at all. The legend and the shortcut bar are
+ * pure text with nothing to click, so they have no business intercepting
+ * anything; letting them through hands two large corners back to the map.
+ *
+ * An explicit prop rather than a className override on purpose: `cn` does not
+ * resolve Tailwind conflicts, so passing `pointer-events-none` would leave both
+ * classes on the element and let stylesheet order decide.
+ */
+const Panel = ({
+  children,
+  className,
+  passive = false,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  passive?: boolean;
+}) => (
   <div
     className={cn(
-      'pointer-events-auto rounded-xs border border-rule bg-page/90 backdrop-blur-sm',
+      passive ? 'pointer-events-none' : 'pointer-events-auto',
+      'rounded-xs border border-rule bg-page/90 backdrop-blur-sm',
       className,
     )}
   >
@@ -293,14 +316,14 @@ export const GraphHud = ({
             </div>
           </Panel>
         ) : (
-          <Panel className="px-3 py-2">
+          <Panel passive className="px-3 py-2">
             <p className="font-heading text-[0.6rem] uppercase tracking-[0.16em] text-muted">
               Pick a block to explore · C connects it · ↑↓ then Enter follows a relation
             </p>
           </Panel>
         )}
 
-        <Panel className="px-3 py-2">
+        <Panel passive className="px-3 py-2">
           <ul className="flex flex-col gap-1">
             {(Object.keys(EDGE_STYLES) as RelationKind[]).map((kind) => (
               <li
