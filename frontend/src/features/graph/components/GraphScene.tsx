@@ -132,7 +132,20 @@ export const GraphScene = ({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const focused = focusedId ? (layout.byId.get(focusedId) ?? null) : null;
 
-  useCameraFlight(focused, controls);
+  /**
+   * How far back the whole map fits on screen.
+   *
+   * One number for two jobs — the opening frame and where letting go returns
+   * to — because they are the same viewpoint, and computing it twice is how
+   * they would quietly drift apart.
+   */
+  const homeDistance = useMemo(
+    () =>
+      Math.max(...layout.nodes.map((node) => Math.hypot(node.x, node.y, node.z)), 20) * 2.4,
+    [layout.nodes],
+  );
+
+  useCameraFlight(focused, controls, homeDistance);
 
   /**
    * Backs the camera off far enough to hold the whole map on arrival.
@@ -155,11 +168,7 @@ export const GraphScene = ({
     if (layout.nodes.length === 0 || framed.current === nodeSignature) return;
     framed.current = nodeSignature;
 
-    const radius = Math.max(
-      ...layout.nodes.map((node) => Math.hypot(node.x, node.y, node.z)),
-      20,
-    );
-    camera.position.set(0, 0, radius * 2.4);
+    camera.position.set(0, 0, homeDistance);
     camera.lookAt(0, 0, 0);
     /**
      * Raycasting reads the camera's world matrix, and moving `position` alone
@@ -172,7 +181,7 @@ export const GraphScene = ({
 
     controls.current?.target.set(0, 0, 0);
     controls.current?.update();
-  }, [layout, nodeSignature, camera]);
+  }, [layout, nodeSignature, camera, homeDistance]);
 
   const neighbourIds = useMemo(
     () => new Set(focusedId ? (layout.neighbours.get(focusedId) ?? []) : []),

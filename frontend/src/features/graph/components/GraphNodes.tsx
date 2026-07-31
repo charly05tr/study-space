@@ -76,6 +76,13 @@ export const GraphNodes = ({
       const travelled = Math.hypot(event.clientX - start.x, event.clientY - start.y);
       if (travelled > CLICK_SLOP) return;
 
+      // `detail` counts the clicks of the run this release belongs to, so
+      // anything past the first is part of a double click — a gesture that
+      // means the opposite of picking. Without this, letting go of a node by
+      // double clicking it re-selected the node in between, and one gesture
+      // ended up firing three changes of state.
+      if (event.detail > 1) return;
+
       onPick(start.id);
     };
 

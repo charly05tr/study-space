@@ -278,3 +278,63 @@ describe('selection to paint round trip', () => {
     expect(painted).toBe('atomic bomb changed everything.Hiroshima came first.Nagasaki');
   });
 });
+
+describe('clearHighlights', () => {
+  /** One repaint: what the frame does whenever the annotation list changes. */
+  const repaint = (targets: Array<{ annotationId: number; range: AnchorRange }>) => {
+    clearHighlights(document);
+    paintHighlights(
+      document,
+      targets.map(({ annotationId, range }) => ({
+        annotationId,
+        annotationType: 'highlight' as AnnotationType,
+        range,
+      })),
+    );
+  };
+
+  it('takes the shading off the text', () => {
+    repaint([{ annotationId: 1, range: { anchor: 'b-aaa', start: 4, end: 10 } }]);
+    const before = block('b-aaa').textContent;
+
+    clearHighlights(document);
+
+    expect(document.querySelectorAll(`.${MARK_CLASS}`)).toHaveLength(0);
+    expect(block('b-aaa').textContent).toBe(before);
+  });
+
+  it('leaves the surviving annotations painted when one is deleted', () => {
+    repaint([
+      { annotationId: 1, range: { anchor: 'b-aaa', start: 0, end: 3 } },
+      { annotationId: 2, range: { anchor: 'b-aaa', start: 4, end: 10 } },
+    ]);
+
+    repaint([{ annotationId: 1, range: { anchor: 'b-aaa', start: 0, end: 3 } }]);
+
+    const marks = document.querySelectorAll<HTMLElement>(`.${MARK_CLASS}`);
+    expect(Array.from(marks, (mark) => mark.dataset.annotationId)).toEqual(['1']);
+  });
+
+  it('stitches the text back so the next paint still lands on the right characters', () => {
+    // The bug this guards: unwrapping a mark leaves the block split across
+    // several text nodes, and offsets are counted over that sequence. If the
+    // pieces are not merged again the next paint is measured against a
+    // different shape of the same text.
+    repaint([{ annotationId: 1, range: { anchor: 'b-aaa', start: 4, end: 10 } }]);
+    repaint([{ annotationId: 2, range: { anchor: 'b-aaa', start: 11, end: 15 } }]);
+
+    const marks = document.querySelectorAll(`.${MARK_CLASS}`);
+    expect(marks).toHaveLength(1);
+    expect(marks[0].textContent).toBe('bomb');
+  });
+
+  it('clears a mark that was painted across several text nodes', () => {
+    repaint([{ annotationId: 1, range: { anchor: 'b-aaa', start: 0, end: 3 } }]);
+    repaint([{ annotationId: 2, range: { anchor: 'b-aaa', start: 4, end: 10 } }]);
+
+    clearHighlights(document);
+
+    expect(document.querySelectorAll(`.${MARK_CLASS}`)).toHaveLength(0);
+    expect(block('b-aaa').childNodes).toHaveLength(1);
+  });
+});

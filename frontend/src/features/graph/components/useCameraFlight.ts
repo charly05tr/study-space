@@ -48,6 +48,8 @@ interface Flight {
 export const useCameraFlight = (
   target: PositionedNode | null,
   controls: React.RefObject<OrbitLike | null>,
+  /** How far from the origin the whole map fits on screen. Where letting go returns to. */
+  homeDistance: number,
 ) => {
   const { camera } = useThree();
   const flight = useRef<Flight | null>(null);
@@ -56,21 +58,36 @@ export const useCameraFlight = (
 
   useEffect(() => {
     /**
-     * Letting go: the orbit centre eases back to the middle of the map.
+     * Letting go: the camera backs off until the whole map fits again.
      *
      * Focusing a block leaves the controls pivoting around it, so afterwards
      * every drag swings the whole scene about that one point — the camera stays
-     * tied to something the user has already dismissed. The position is left
-     * alone and only the pivot moves, so the map does not lurch; it reads as
-     * stepping back rather than as being thrown somewhere.
+     * tied to something the user has already dismissed. So the pivot has to
+     * come home.
+     *
+     * The position used to be left exactly where it was, on the reasoning that
+     * moving it would read as being thrown somewhere. That holds when you let
+     * go from wherever you happened to be standing — but not after the gesture
+     * that got you here was a flight INTO the block. Releasing then left the
+     * camera parked inside the very thing it had just dismissed, filling the
+     * screen with it, so nothing about the map appeared to change and letting
+     * go looked like it had silently failed.
+     *
+     * Backing off ALONG THE CURRENT DIRECTION is what keeps it from lurching:
+     * the distance changes and the angle does not, exactly as the approach
+     * does, so the arrangement the user has in their head survives the trip.
      */
     if (!target) {
       if (!held.current || !controls.current) return;
       held.current = false;
 
+      const direction = camera.position.clone();
+      // Only if the camera sits exactly on the origin; any axis will do.
+      if (direction.lengthSq() < 1e-6) direction.set(0, 0, 1);
+
       flight.current = {
         from: camera.position.clone(),
-        to: camera.position.clone(),
+        to: direction.normalize().multiplyScalar(homeDistance),
         fromTarget: controls.current.target.clone(),
         toTarget: new THREE.Vector3(0, 0, 0),
         elapsed: 0,
@@ -95,7 +112,7 @@ export const useCameraFlight = (
       toTarget: destination,
       elapsed: 0,
     };
-  }, [target, camera, controls]);
+  }, [target, camera, controls, homeDistance]);
 
   /**
    * Taking hold of the map abandons the trip.
