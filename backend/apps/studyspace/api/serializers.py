@@ -233,15 +233,23 @@ class BlockSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Block
-        fields = ['id', 'note', 'note_title', 'studyspace', 'block_type', 'text', 'position']
+        fields = [
+            'id', 'note', 'note_title', 'studyspace', 'block_type', 'text',
+            'position', 'promoted',
+        ]
 
 
 class BlockVisibilitySerializer(serializers.ModelSerializer):
-    """Lo unico de un Block que la API puede escribir."""
+    """Lo unico de un Block que la API puede escribir.
+
+    Los dos campos son decisiones del usuario SOBRE EL MAPA, no sobre la nota, y
+    por eso son los unicos que la sincronizacion no pisa. `promoted` sube un
+    bloque a concepto propio; `excluded_from_map` lo saca del mapa por completo.
+    """
 
     class Meta:
         model = Block
-        fields = ['id', 'excluded_from_map']
+        fields = ['id', 'excluded_from_map', 'promoted']
         read_only_fields = ['id']
 
 
@@ -265,20 +273,45 @@ class BlockLinkSerializer(serializers.ModelSerializer):
 
 
 class GraphNodeSerializer(serializers.ModelSerializer):
+    """Un CONCEPTO del mapa: el bloque que lo ancla, mas lo que absorbio.
+
+    `text` es el del ancla — el titulo de la idea. `preview` es el arranque de su
+    cuerpo, porque un heading como "Precios" no alcanza para reconocer de que
+    hablaba sin abrir la nota.
+    """
     note_title = serializers.CharField(source='note.title', read_only=True)
     # Bloque que ya no esta en ninguna nota. El grafo lo dibuja igual, apagado:
     # el parrafo se borro pero la relacion que el usuario penso sigue ahi.
     orphan = serializers.BooleanField(source='is_orphan', read_only=True)
+    # Cuantos bloques viven adentro de la idea, contando el ancla. Es lo que
+    # separa un titulo con tres parrafos abajo de uno que quedo vacio.
+    block_count = serializers.IntegerField(read_only=True)
+    preview = serializers.SerializerMethodField()
 
     class Meta:
         model = Block
-        fields = ['id', 'note', 'note_title', 'block_type', 'text', 'orphan']
+        fields = [
+            'id', 'note', 'note_title', 'block_type', 'text',
+            'orphan', 'block_count', 'preview', 'promoted',
+        ]
+
+    def get_preview(self, block) -> str:
+        return self.context.get('previews', {}).get(str(block.pk), '')
 
 
-class GraphEdgeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BlockLink
-        fields = ['id', 'source', 'target', 'kind', 'origin']
+class GraphEdgeSerializer(serializers.Serializer):
+    """Una arista entre conceptos. No es un BlockLink: es un grupo de ellos.
+
+    Serializer plano y no ModelSerializer porque no hay modelo detras — el
+    agrupado lo arma ConceptGraphService en memoria.
+    """
+    id = serializers.IntegerField(read_only=True)
+    source = serializers.CharField(read_only=True)
+    target = serializers.CharField(read_only=True)
+    kind = serializers.CharField(read_only=True)
+    origin = serializers.CharField(read_only=True)
+    # Las relaciones reales que hay debajo. Borrar la arista es borrarlas todas.
+    link_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
 
 
 def _to_minutes(duration) -> int:

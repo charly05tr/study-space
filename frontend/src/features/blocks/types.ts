@@ -33,6 +33,8 @@ export interface BlockSummary {
   block_type: string;
   text: string;
   position: number;
+  /** Raised to a concept of its own by hand. */
+  promoted: boolean;
 }
 
 /** Shape of BlockLinkSerializer. */

@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { EmptyState, ErrorState, Loading, useNotification } from '../../../components/ui';
 import { useCreateBlockLink, useDeleteBlockLink } from '../../blocks/hooks/useBlockLinkMutations';
-import { useSetBlockExcluded } from '../../blocks/hooks/useBlockVisibility';
+import { useSetBlockExcluded, useSetBlockPromoted } from '../../blocks/hooks/useBlockVisibility';
 import type { RelationKind } from '../../blocks/types';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
+import { ConceptCandidates } from '../components/ConceptCandidates';
 import { GraphCanvas } from '../components/GraphCanvas';
 import { GraphHud } from '../components/GraphHud';
 import { NodeMenu, type NodeMenuTarget } from '../components/NodeMenu';
 import { useGraphLayout } from '../hooks/useGraphLayout';
-import { relationsOf } from '../relations';
+import { relationsOf, type Relation } from '../relations';
 import type { Connecting } from '../types';
 
 export const GraphPage = () => {
@@ -32,6 +33,9 @@ export const GraphPage = () => {
   const createLink = useCreateBlockLink(id);
   const deleteLink = useDeleteBlockLink(id);
   const setExcluded = useSetBlockExcluded(id);
+  const setPromoted = useSetBlockPromoted(id);
+  /** Which candidate is being raised, so only its own row goes quiet. */
+  const [promotingId, setPromotingId] = useState<string | null>(null);
 
   /** Where the walk came from, so Escape retraces it instead of just clearing. */
   const trail = useRef<string[]>([]);
@@ -103,7 +107,7 @@ export const GraphPage = () => {
           notify({
             variant: 'success',
             title: 'Taken off the map',
-            message: 'The block is still in its note.',
+            message: 'Its blocks are still in the note.',
           });
         },
         onError: (mutationError) =>
@@ -116,9 +120,43 @@ export const GraphPage = () => {
     );
   };
 
-  const removeRelation = (linkId: number) => {
-    setDeletingId(linkId);
-    deleteLink.mutate(linkId, {
+  /**
+   * Raises a block to an idea of its own, or folds it back into its section.
+   *
+   * Both directions are the same field, so they are one handler: promoting is
+   * how a paragraph under no heading reaches the map, and folding back is how a
+   * node that turned out not to be its own idea leaves it WITHOUT being hidden.
+   * That distinction matters — "remove from the map" is a different answer.
+   */
+  const promote = (blockId: string, promoted: boolean) => {
+    setPromotingId(blockId);
+    setPromoted.mutate(
+      { blockId, promoted },
+      {
+        onSettled: () => setPromotingId(null),
+        onSuccess: () => {
+          if (!promoted) {
+            setMenu(null);
+            // The node is about to stop existing as a node; leaving the focus on
+            // it would keep its panel open over an empty patch of space.
+            if (focusedId === blockId) setFocusedId(null);
+          }
+        },
+        onError: (mutationError) =>
+          notify({
+            variant: 'error',
+            title: promoted ? 'Could not raise it' : 'Could not fold it back',
+            message: getApiErrorMessage(mutationError),
+          }),
+      },
+    );
+  };
+
+  const removeRelation = (relation: Relation) => {
+    // Keyed by the edge, but deleting every written link under it: one relation
+    // between two ideas can rest on several `[[` written in different blocks.
+    setDeletingId(relation.id);
+    deleteLink.mutate(relation.linkIds, {
       onSettled: () => setDeletingId(null),
       onError: (mutationError) =>
         notify({
@@ -226,8 +264,19 @@ export const GraphPage = () => {
     return (
       <div className="mx-auto flex max-w-measure flex-col gap-4 px-6 py-12">
         <EmptyState
-          title="Nothing to map yet"
-          description="The map draws itself from your notes. Write a few blocks, then connect them with [[ inside a note."
+          title="No ideas on the map yet"
+          description="The map draws one node per idea, not one per paragraph — and it reads your headings to know where an idea starts. Add a heading or two to a note, or raise a block by hand below."
+        />
+        {/*
+          The panel belongs here more than anywhere else. A note written as a
+          flat run of paragraphs declares no concepts at all, so this screen is
+          exactly what its author sees — and telling them the map is empty
+          without showing the way onto it would be a dead end.
+        */}
+        <ConceptCandidates
+          studyspaceId={id}
+          promotingId={promotingId}
+          onPromote={(blockId) => promote(blockId, true)}
         />
         <Link
           to={`/studyspace/${id}`}
@@ -268,6 +317,13 @@ export const GraphPage = () => {
         deletingId={deletingId}
         showEdges={showEdges}
         onToggleEdges={() => setShowEdges((visible) => !visible)}
+        candidates={
+          <ConceptCandidates
+            studyspaceId={id}
+            promotingId={promotingId}
+            onPromote={(blockId) => promote(blockId, true)}
+          />
+        }
       />
 
       {menu && (
@@ -275,6 +331,8 @@ export const GraphPage = () => {
           target={menu}
           removing={setExcluded.isPending}
           onRemove={removeFromMap}
+          demoting={promotingId === menu.node.id}
+          onDemote={() => promote(menu.node.id, false)}
           onClose={() => setMenu(null)}
         />
       )}

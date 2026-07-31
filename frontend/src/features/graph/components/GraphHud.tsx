@@ -18,11 +18,22 @@ interface GraphHudProps {
   onStartConnect: () => void;
   onCancelConnect: () => void;
   onConfirmConnect: (kind: RelationKind, note: string) => void;
-  onDeleteRelation: (linkId: number) => void;
+  // The whole relation, not its id: removing an edge means removing every
+  // written link under it, and only the relation carries that list.
+  onDeleteRelation: (relation: Relation) => void;
   saving: boolean;
   deletingId: number | null;
   showEdges: boolean;
   onToggleEdges: () => void;
+  /**
+   * The "not on the map" panel, injected rather than imported.
+   *
+   * It sits inside the HUD's own layout instead of floating over it: a second
+   * absolutely positioned layer had no idea the bottom row was already taken
+   * and landed on top of the shortcut bar. Passed as a slot so the HUD stays
+   * unaware of blocks and mutations, which are the page's business.
+   */
+  candidates?: React.ReactNode;
 }
 
 const Panel = ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -52,6 +63,7 @@ export const GraphHud = ({
   deletingId,
   showEdges,
   onToggleEdges,
+  candidates,
 }: GraphHudProps) => {
   const [query, setQuery] = useState('');
   const [why, setWhy] = useState('');
@@ -59,7 +71,11 @@ export const GraphHud = ({
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
-    return layout.nodes.filter((node) => node.text.toLowerCase().includes(needle)).slice(0, 8);
+    return layout.nodes
+      // The preview counts too: a node is named by its heading, and you rarely
+      // remember an idea by its title — you remember a phrase from its body.
+      .filter((node) => `${node.text} ${node.preview}`.toLowerCase().includes(needle))
+      .slice(0, 8);
   }, [layout, query]);
 
   const source = connecting ? (layout.byId.get(connecting.sourceId) ?? null) : null;
@@ -70,12 +86,16 @@ export const GraphHud = ({
     // dragging the map still works between the panels.
     <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-4">
       <div className="flex items-start justify-between gap-4">
-        <Panel className="w-72 p-2">
+        {/* The two ways of looking something up, stacked in one column: what is
+            already on the map, and what is not. Anchored to the top so both
+            grow downwards instead of into the panels at the bottom. */}
+        <div className="flex w-72 flex-col gap-2">
+        <Panel className="p-2">
           <input
             type="search"
             value={query}
-            placeholder="Find a block"
-            aria-label="Find a block"
+            placeholder="Find an idea"
+            aria-label="Find an idea"
             onChange={(event) => setQuery(event.target.value)}
             className="w-full bg-transparent px-2 py-1 font-body text-sm text-ink placeholder:text-muted/60 focus:outline-none"
           />
@@ -103,9 +123,15 @@ export const GraphHud = ({
           )}
         </Panel>
 
+          {candidates}
+        </div>
+
         <Panel className="flex items-center gap-3 px-3 py-2">
           <p className="font-heading text-[0.6rem] uppercase tracking-[0.16em] text-muted">
-            {layout.nodes.length} blocks · {layout.edges.length} relations
+            {/* "ideas", not "blocks": a node holds a heading and everything
+                written under it, so the two counts differ by a lot and calling
+                them blocks would read as if most of the note went missing. */}
+            {layout.nodes.length} ideas · {layout.edges.length} relations
           </p>
 
           {/* Hiding the lines is not a cosmetic switch: on a dense map they
@@ -232,7 +258,7 @@ export const GraphHud = ({
                         type="button"
                         aria-label="Remove this relation"
                         disabled={deletingId === relation.id}
-                        onClick={() => onDeleteRelation(relation.id)}
+                        onClick={() => onDeleteRelation(relation)}
                         className="shrink-0 px-1 text-muted transition-colors hover:text-danger disabled:opacity-45"
                       >
                         &times;

@@ -69,6 +69,30 @@ class Block(models.Model):
     # Orden dentro del documento, en recorrido de lectura.
     position = models.PositiveIntegerField()
 
+    # Solo en los headings. Es lo que da forma al esquema de la nota, y por lo
+    # tanto la frontera entre un concepto y el siguiente.
+    heading_level = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    # Promovido a concepto a mano. Como excluded_from_map, lo decide el usuario y
+    # la sincronizacion no lo toca: es la valvula de escape para el parrafo que
+    # SI es una idea en si misma aunque no lleve un titulo propio.
+    promoted = models.BooleanField(default=False)
+
+    # El bloque que ancla el concepto al que este pertenece; a si mismo si el
+    # ancla es el. Null significa que el bloque no esta en el mapa: existe en la
+    # nota, se puede buscar y promover, pero no se dibuja.
+    #
+    # DERIVADO, como todo el resto de esta tabla: lo recalcula assign_concepts en
+    # cada sincronizacion. No es una decision guardada, es una proyeccion del
+    # esquema del documento.
+    concept = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='members',
+    )
+
     # Borrado suave. Un bloque que desaparece de la nota NO se elimina: lo mas
     # valioso de la app no es el texto sino las relaciones que el usuario penso,
     # y borrar un parrafo sin querer no deberia llevarselas puestas.
@@ -88,11 +112,18 @@ class Block(models.Model):
         indexes = [
             models.Index(fields=['note', 'position']),
         ]
+        # Sin indice propio para `concept`: es una ForeignKey, y Django ya le
+        # pone db_index=True. Agregar otro seria mantener el mismo arbol dos veces.
 
     @property
     def is_orphan(self) -> bool:
         """El bloque ya no esta en la nota, pero sus relaciones siguen vivas."""
         return self.deleted_at is not None
+
+    @property
+    def is_concept(self) -> bool:
+        """Ancla su propio concepto: es un nodo del mapa, no parte de uno."""
+        return self.concept_id is not None and str(self.concept_id) == str(self.pk)
 
 
 """Una relacion dirigida entre dos blocks. Es la arista del mapa conceptual."""

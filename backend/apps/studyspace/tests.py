@@ -458,6 +458,202 @@ class ColumnLayoutIndexingTests(SimpleTestCase):
         self.assertEqual(links[0].target_id, 'otro-bloque')
 
 
+class ConceptAssignmentTests(SimpleTestCase):
+    """El reparto de bloques en conceptos. Puro, asi que no toca la base."""
+
+    def _blocks(self, *specs):
+        from apps.studyspace.services.block_service import ConceptInput
+
+        return [
+            ConceptInput(
+                id=spec[0],
+                block_type=spec[1],
+                heading_level=spec[2] if len(spec) > 2 else None,
+                promoted=spec[3] if len(spec) > 3 else False,
+                excluded_from_map=spec[4] if len(spec) > 4 else False,
+            )
+            for spec in specs
+        ]
+
+    def test_a_heading_absorbs_the_paragraphs_under_it(self):
+        # Es el cambio entero en una linea: tres parrafos bajo un titulo son UNA
+        # idea, no cuatro nodos.
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(
+            ('h', 'heading', 2),
+            ('p1', 'paragraph'),
+            ('p2', 'paragraph'),
+        ))
+        self.assertEqual(concepts, {'h': 'h', 'p1': 'h', 'p2': 'h'})
+
+    def test_a_deeper_heading_opens_a_concept_inside_the_outer_one(self):
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(
+            ('h2', 'heading', 2),
+            ('under-h2', 'paragraph'),
+            ('h3', 'heading', 3),
+            ('under-h3', 'paragraph'),
+        ))
+        self.assertEqual(concepts['under-h2'], 'h2')
+        self.assertEqual(concepts['under-h3'], 'h3')
+
+    def test_a_heading_of_the_same_level_closes_the_previous_one(self):
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(
+            ('first', 'heading', 2),
+            ('h3', 'heading', 3),
+            ('second', 'heading', 2),
+            ('after', 'paragraph'),
+        ))
+        # Ni al h3 ni al primer h2: un titulo termina donde empieza el que sigue
+        # a su mismo nivel.
+        self.assertEqual(concepts['after'], 'second')
+
+    def test_an_annotation_is_its_own_concept_but_absorbs_nothing(self):
+        # Una cita es una idea cerrada, no un encabezado. Si se llevara los
+        # parrafos de abajo, escribir debajo de una cita cambiaria de que habla.
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(
+            ('h', 'heading', 2),
+            ('quote', 'annotation'),
+            ('after', 'paragraph'),
+        ))
+        self.assertEqual(concepts['quote'], 'quote')
+        self.assertEqual(concepts['after'], 'h')
+
+    def test_an_annotation_under_no_heading_still_reaches_the_map(self):
+        # El caso que hace util el mapa: conectar lo que dice una fuente con lo
+        # que dice otra. Absorberla en un titulo dejaria conectar capitulos.
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(('quote', 'annotation')))
+        self.assertEqual(concepts['quote'], 'quote')
+
+    def test_a_paragraph_with_no_heading_above_it_is_not_on_the_map(self):
+        # Una nota sin un solo titulo no declara ningun concepto, y decirlo es
+        # mas honesto que dibujar cada parrafo para que el usuario los borre.
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(('p', 'paragraph')))
+        self.assertIsNone(concepts['p'])
+
+    def test_promoting_a_paragraph_makes_it_a_concept_of_its_own(self):
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(
+            ('h', 'heading', 2),
+            ('plain', 'paragraph'),
+            ('promoted', 'paragraph', None, True),
+        ))
+        self.assertEqual(concepts['plain'], 'h')
+        self.assertEqual(concepts['promoted'], 'promoted')
+
+    def test_a_promoted_paragraph_does_not_steal_the_blocks_after_it(self):
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(
+            ('h', 'heading', 2),
+            ('promoted', 'paragraph', None, True),
+            ('after', 'paragraph'),
+        ))
+        self.assertEqual(concepts['after'], 'h')
+
+    def test_a_hidden_heading_leaves_its_paragraphs_to_the_heading_above(self):
+        # Esconder un titulo del mapa tiene que ser como si no estuviera escrito,
+        # no como si cortara la nota en dos.
+        from apps.studyspace.services.block_service import assign_concepts
+
+        concepts = assign_concepts(self._blocks(
+            ('h2', 'heading', 2),
+            ('h3', 'heading', 3, False, True),
+            ('under-h3', 'paragraph'),
+        ))
+        self.assertIsNone(concepts['h3'])
+        self.assertEqual(concepts['under-h3'], 'h2')
+
+
+class ConceptEdgeLiftingTests(SimpleTestCase):
+    """Aristas: se leen entre ideas, no entre los parrafos que las escribieron."""
+
+    def _lift(self, links, node_ids):
+        from apps.studyspace.services.concept_graph_service import lift_edges
+
+        return lift_edges(links, node_ids)
+
+    def test_a_link_between_two_paragraphs_becomes_one_between_their_concepts(self):
+        edges = self._lift(
+            [(1, 'inflacion', 'precios', 'relates', 'inline')],
+            {'inflacion', 'precios'},
+        )
+        self.assertEqual(len(edges), 1)
+        self.assertEqual((edges[0].source, edges[0].target), ('inflacion', 'precios'))
+
+    def test_two_links_inside_the_same_pair_collapse_into_one_edge(self):
+        # Dos parrafos de un capitulo citando dos de otro son, entre ideas, UNA
+        # conexion. Dibujarlas por separado seria contar el mismo pensamiento dos veces.
+        edges = self._lift(
+            [
+                (1, 'inflacion', 'precios', 'relates', 'graph'),
+                (2, 'inflacion', 'precios', 'relates', 'graph'),
+            ],
+            {'inflacion', 'precios'},
+        )
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(sorted(edges[0].link_ids), [1, 2])
+
+    def test_a_collapsed_edge_keeps_a_stable_id(self):
+        edges = self._lift(
+            [
+                (7, 'a', 'b', 'relates', 'graph'),
+                (3, 'a', 'b', 'relates', 'graph'),
+            ],
+            {'a', 'b'},
+        )
+        self.assertEqual(edges[0].id, 3)
+
+    def test_a_group_holding_an_inline_link_cannot_be_deleted_from_the_map(self):
+        # Ofrecer el boton dejaria el trabajo a medias: la mitad inline vuelve
+        # sola en el proximo guardado de la nota.
+        edges = self._lift(
+            [
+                (1, 'a', 'b', 'relates', 'graph'),
+                (2, 'a', 'b', 'relates', 'inline'),
+            ],
+            {'a', 'b'},
+        )
+        self.assertEqual(edges[0].origin, 'inline')
+
+    def test_two_kinds_between_the_same_pair_stay_two_edges(self):
+        edges = self._lift(
+            [
+                (1, 'a', 'b', 'relates', 'graph'),
+                (2, 'a', 'b', 'contradicts', 'graph'),
+            ],
+            {'a', 'b'},
+        )
+        self.assertEqual(len(edges), 2)
+
+    def test_a_link_inside_one_concept_is_not_an_edge(self):
+        # Un parrafo citando a su vecino bajo el mismo titulo es una referencia
+        # interna, no una conexion entre ideas.
+        edges = self._lift([(1, 'misma', 'misma', 'relates', 'graph')], {'misma'})
+        self.assertEqual(edges, [])
+
+    def test_an_end_with_no_concept_drops_the_edge(self):
+        edges = self._lift([(1, 'a', None, 'relates', 'graph')], {'a'})
+        self.assertEqual(edges, [])
+
+    def test_an_end_outside_the_node_set_drops_the_edge(self):
+        # Lo que producia aristas colgando: el filtro de nodos y el de aristas
+        # eran dos consultas distintas y no coincidian.
+        edges = self._lift([(1, 'a', 'escondido', 'relates', 'graph')], {'a'})
+        self.assertEqual(edges, [])
+
+
 class ConverterRegistryTests(SimpleTestCase):
     def test_a_retired_converter_never_matches_a_stored_version(self):
         # 0 is the default of Source.converted_with, so no live converter may

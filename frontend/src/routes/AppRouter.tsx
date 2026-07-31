@@ -9,7 +9,6 @@ import { ReaderLayout } from '../layouts/ReaderLayout';
 // Importamos los Guardianes
 import { ProtectedRoute, PublicRoute } from './Guards';
 
-import { DummyPage } from './DummyPage';
 import { LoginPage } from '../features/auth/pages/LoginPage';
 import { RegisterPage } from '../features/auth/pages/RegisterPage';
 import { ActivateAccountPage } from '../features/auth/pages/ActivateAccountPage';
@@ -18,6 +17,7 @@ import { CreateStudyspacePage } from '../features/studyspaces/pages/CreateStudys
 import { StudyspaceDetailPage } from '../features/studyspaces/pages/StudyspaceDetailPage';
 import { ReaderPage } from '../features/reader/pages/ReaderPage';
 import { SessionsPage } from '../features/sessions/pages/SessionsPage';
+import { ProfilePage } from '../features/profile/pages/ProfilePage';
 import { NotePage } from '../features/notes/pages/NotePage';
 import { LazyGraphPage } from './LazyGraphPage';
 
@@ -68,7 +68,7 @@ export const router = createBrowserRouter([
           // El editor es escritura, no lectura: va en AppLayout como el hub, no
           // en ReaderLayout.
           { path: '/note/:noteId', element: <NotePage /> },
-          { path: '/profile', element: <DummyPage title="Profile" /> },
+          { path: '/profile', element: <ProfilePage /> },
         ],
       },
       {

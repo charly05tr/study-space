@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Divider, EmptyState, ErrorState, Skeleton, SkeletonText } from '../../../components/ui';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import { BlockEditor } from '../components/BlockEditor';
+import { NoteTitle } from '../components/NoteTitle';
 import { useNote } from '../hooks/useNote';
 
 export const NotePage = () => {
@@ -51,7 +52,7 @@ export const NotePage = () => {
           &larr; Back to studyspace
         </Link>
 
-        <h1 className="font-display text-4xl text-ink">{note.title}</h1>
+        <NoteTitle noteId={note.id} studyspaceId={note.studyspace} title={note.title} />
 
         <Divider ornament className="max-w-40" />
       </header>

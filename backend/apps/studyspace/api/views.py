@@ -14,6 +14,8 @@ from apps.studyspace.api.filters import (
     StudySessionFilter,
 )
 from apps.studyspace.api.serializers import *
+from apps.studyspace.services.block_service import BlockIndexService
+from apps.studyspace.services.concept_graph_service import ConceptGraphService
 from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.source_service import SourceService
 from apps.studyspace.services.annotation_service import AnnotationService
@@ -60,6 +62,9 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
     def graph(self, request, pk=None):
         """El mapa conceptual completo de un studyspace, en una sola request.
 
+        Un nodo es un CONCEPTO, no un parrafo: el bloque que lo ancla mas todo lo
+        que absorbio. El por que esta en `assign_concepts`, en block_service.
+
         No usa /blocks/ ni /block-links/ a proposito: aquel busca para el menu
         `[[`, topea en 50 resultados y esconde los huerfanos. El grafo necesita
         exactamente lo contrario, y pedir las dos mitades por separado dejaria
@@ -68,22 +73,23 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
         owned = self.service.get_user_studyspaces(user=request.user)
         studyspace = get_object_or_404(owned, pk=pk)
 
-        nodes = (
-            Block.objects
-            # excluded_from_map es una decision del usuario sobre el mapa, no
-            # sobre la nota: el bloque sigue existiendo y sus relaciones tambien.
-            .filter(note__studyspace=studyspace, excluded_from_map=False)
-            .select_related('note')
-            .order_by('note_id', 'position')
-        )
-        edges = (
-            BlockLink.objects
-            .filter(source__note__studyspace=studyspace)
-            .only('id', 'source_id', 'target_id', 'kind', 'origin')
-        )
+        graph_service = ConceptGraphService()
+
+        nodes = list(graph_service.nodes(studyspace))
+        node_ids = {str(node.pk) for node in nodes}
+
+        # Las aristas se resuelven CONTRA el conjunto de nodos ya calculado, y no
+        # con un filtro paralelo. Eran dos consultas independientes, asi que todo
+        # lo que una escondia y la otra no dejaba aristas apuntando a un extremo
+        # que nunca llegaba al cliente.
+        edges = graph_service.edges(studyspace, node_ids)
 
         return Response({
-            'nodes': GraphNodeSerializer(nodes, many=True).data,
+            'nodes': GraphNodeSerializer(
+                nodes,
+                many=True,
+                context={'previews': graph_service.previews(studyspace, node_ids)},
+            ).data,
             'edges': GraphEdgeSerializer(edges, many=True).data,
         })
 
@@ -382,11 +388,12 @@ class StudySessionViewSet(
 
 
 class BlockViewSet(mixins.UpdateModelMixin, viewsets.ReadOnlyModelViewSet):
-    """El contenido nace del documento; solo la visibilidad en el mapa se edita.
+    """El contenido nace del documento; solo su lugar en el mapa se edita.
 
     Escribir el texto o el tipo de un bloque aca lo pondria en desacuerdo con
-    Note.content hasta el proximo guardado, que lo revertiria sin avisar. Por eso
-    el unico campo escribible es excluded_from_map, que la sincronizacion no toca.
+    Note.content hasta el proximo guardado, que lo revertiria sin avisar. Los
+    unicos campos escribibles son excluded_from_map y promoted, que son
+    decisiones sobre el MAPA y que por eso la sincronizacion no toca.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = BlockSerializer
@@ -398,6 +405,10 @@ class BlockViewSet(mixins.UpdateModelMixin, viewsets.ReadOnlyModelViewSet):
     # Techo duro. Sin `q`, un studyspace grande devolveria miles de filas para
     # llenar un menu que muestra diez.
     MAX_RESULTS = 50
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.index_service = BlockIndexService()
 
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
@@ -418,6 +429,17 @@ class BlockViewSet(mixins.UpdateModelMixin, viewsets.ReadOnlyModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())[:self.MAX_RESULTS]
         return Response(self.get_serializer(queryset, many=True).data)
 
+    def perform_update(self, serializer):
+        """Promover o esconder un bloque redibuja los conceptos de su nota.
+
+        Hay que pedirlo a mano: ninguno de los dos campos vive en Note.content,
+        asi que la huella del documento no se mueve y `sync` cortaria antes de
+        recalcular nada. Sin esto, promover un parrafo no lo pondria en el mapa
+        hasta que el usuario volviera a escribir en la nota.
+        """
+        block = serializer.save()
+        self.index_service.reassign_concepts(block.note)
+
 
 class BlockLinkViewSet(viewsets.ModelViewSet):
     """Las aristas del mapa conceptual.
@@ -437,8 +459,22 @@ class BlockLinkViewSet(viewsets.ModelViewSet):
             .select_related('source', 'target')
         )
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.index_service = BlockIndexService()
+
     def _owned_blocks(self):
         return Block.objects.filter(note__studyspace__user=self.request.user)
+
+    def _reassign_ends(self, link):
+        """Un huerfano ancla concepto propio solo mientras tenga relaciones.
+
+        Asi que conectarlo puede ponerlo en el mapa y desconectarlo puede
+        sacarlo, y en los dos casos hay que recalcular las dos notas: nada de
+        esto pasa por el documento, asi que `sync` no se entera.
+        """
+        for note in {link.source.note_id: link.source.note, link.target.note_id: link.target.note}.values():
+            self.index_service.reassign_concepts(note)
 
     def perform_create(self, serializer):
         # Sin esto se podria relacionar el bloque de otra cuenta pasando su id:
@@ -452,7 +488,8 @@ class BlockLinkViewSet(viewsets.ModelViewSet):
 
         # El origen lo decide el servidor: una arista creada por esta API se
         # dibujo en el mapa, y marcarla como inline la borraria el sync.
-        serializer.save(origin=BlockLink.Origin.GRAPH)
+        link = serializer.save(origin=BlockLink.Origin.GRAPH)
+        self._reassign_ends(link)
 
     def perform_destroy(self, instance):
         if instance.origin == BlockLink.Origin.INLINE:
@@ -460,3 +497,6 @@ class BlockLinkViewSet(viewsets.ModelViewSet):
                 "Esa relacion esta escrita en la nota. Borrala desde el texto."
             )
         instance.delete()
+        # Despues de borrar: el huerfano que se queda sin ninguna relacion deja
+        # de ser un nodo, y es lo unico que lo sacaba del mapa.
+        self._reassign_ends(instance)

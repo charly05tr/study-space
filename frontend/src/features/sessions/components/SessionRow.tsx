@@ -19,7 +19,7 @@ export const SessionRow = ({ session }: SessionRowProps) => {
   const pomodoros = session.completed_pomodoros;
 
   return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-rule/60 py-3 last:border-b-0">
+    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-rule/60 last:border-b-0">
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-ink">{session.goal}</span>
         <span className="font-heading text-xs uppercase tracking-[0.14em] text-muted">

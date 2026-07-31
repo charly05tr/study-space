@@ -50,15 +50,17 @@ export const ReaderColors = ({ dark }: ReaderColorsProps) => {
 
   return (
     <div ref={container} >
-      <Button
-        variant="quiet"
-        size="sm"
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={() => setOpen((current) => !current)}
-      >
-        Colors
-      </Button>
+      <div className='mb-1.5'>
+        <Button
+          variant="quiet"
+          size="sm"
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          onClick={() => setOpen((current) => !current)}
+        >
+          Colors
+        </Button>
+      </div>
 
       {open && (
         <div

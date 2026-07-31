@@ -20,12 +20,19 @@ export const useCreateBlockLink = (studyspaceId: number) => {
   });
 };
 
+/**
+ * Takes ids, plural: one edge of the map can rest on several written relations.
+ *
+ * Invalidates on settle rather than on success — a run that removed three of
+ * four links still changed the map, and leaving the stale payload in place
+ * would show an edge that is no longer entirely there.
+ */
 export const useDeleteBlockLink = (studyspaceId: number) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: number) => blockLinksApi.remove(id),
-    onSuccess: () => {
+    mutationFn: (ids: number[]) => blockLinksApi.removeAll(ids),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: graphQueryKey(studyspaceId) });
     },
   });

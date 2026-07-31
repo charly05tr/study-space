@@ -10,6 +10,14 @@ export interface Relation {
   outgoing: boolean;
   /** Only edges drawn on the map can be removed here; `[[` ones belong to the note. */
   origin: 'inline' | 'graph';
+  /**
+   * The written relations behind this one edge.
+   *
+   * Carried all the way to the panel because removing the edge has to remove
+   * every one of them — leaving any behind would redraw the edge on the next
+   * refetch, and the click would look like it silently failed.
+   */
+  linkIds: number[];
 }
 
 /**
@@ -25,7 +33,16 @@ export const relationsOf = (layout: GraphLayout, nodeId: string | null): Relatio
     .map((edge) => {
       const outgoing = edge.source === nodeId;
       const other = layout.byId.get(outgoing ? edge.target : edge.source);
-      return other ? { id: edge.id, other, kind: edge.kind, outgoing, origin: edge.origin } : null;
+      return other
+        ? {
+            id: edge.id,
+            other,
+            kind: edge.kind,
+            outgoing,
+            origin: edge.origin,
+            linkIds: edge.link_ids,
+          }
+        : null;
     })
     .filter((relation): relation is Relation => relation !== null);
 };

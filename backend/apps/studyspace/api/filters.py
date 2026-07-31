@@ -1,3 +1,4 @@
+from django.db.models import F, Q
 from django_filters import rest_framework as filters
 
 from apps.studyspace.models import Annotation, Block, BlockLink, StudySession
@@ -20,7 +21,7 @@ class AnnotationFilter(filters.FilterSet):
 
 
 class BlockFilter(filters.FilterSet):
-    """El buscador que se abre al escribir `[[`.
+    """El buscador que se abre al escribir `[[`, y la lista de candidatos.
 
     `studyspace` y no `note`: se relacionan ideas ENTRE notas, asi que limitar
     la busqueda a la nota actual dejaria afuera justo el caso interesante.
@@ -28,10 +29,29 @@ class BlockFilter(filters.FilterSet):
 
     studyspace = filters.NumberFilter(field_name='note__studyspace')
     q = filters.CharFilter(field_name='text', lookup_expr='icontains')
+    promotable = filters.BooleanFilter(method='filter_promotable')
 
     class Meta:
         model = Block
-        fields = ['studyspace', 'note', 'block_type', 'q']
+        fields = ['studyspace', 'note', 'block_type', 'q', 'promotable']
+
+    def filter_promotable(self, queryset, name, value):
+        """Bloques que PODRIAN ser un concepto y todavia no lo son.
+
+        Es la contracara del mapa: lo que quedo absorbido dentro de una idea mas
+        grande, o lo que no tiene ningun titulo del cual colgar. Existe para que
+        promover no sea un boton escondido — sin una lista donde mirarlos, una
+        nota sin estructura no tendria forma de llegar nunca al mapa.
+        """
+        if value is None:
+            return queryset
+
+        # `concept__isnull` va aparte y no alcanza con negar la igualdad: en SQL
+        # `NOT (NULL = id)` es NULL, no verdadero, asi que los bloques sin
+        # concepto — los de una nota sin un solo titulo, que son EXACTAMENTE los
+        # que mas necesitan promoverse — se caian del filtro en silencio.
+        promotable = Q(concept__isnull=True) | ~Q(concept_id=F('id'))
+        return queryset.filter(promotable) if value else queryset.filter(concept_id=F('id'))
 
 
 class StudySessionFilter(filters.FilterSet):
