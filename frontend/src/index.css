@@ -296,3 +296,232 @@
     opacity: 0.55;
   }
 }
+
+/*
+  Tables.
+
+  ─── Why this block is in `utilities` and not `components` ──────────────────
+
+  Because @tailwindcss/typography emits the entire `prose` ruleset into the
+  UTILITIES layer, and a later layer beats an earlier one no matter how
+  specific the earlier selector is. Written in `components` alongside the rest
+  of the note styles, every rule below loses silently: cells keep typography's
+  `padding-inline-start: 0` on the first column, and the paragraph inside each
+  cell keeps its 1.25em block margins — which is 40px of dead air per row, on
+  a table whose rows hold the word "5".
+
+  Specificity only decides the winner once two rules are in the SAME layer.
+  That is the whole reason for this block's existence, so before moving a rule
+  out of it, check what `prose` already says about the same element.
+*/
+@layer utilities {
+  /*
+    The wrapper is the whole reason a wide table is survivable: `overflow-x`
+    lives on it, so the grid scrolls inside the measure instead of dragging the
+    prose sideways with it. `renderWrapper: true` in tableNodes.ts is what puts
+    it there — without that option the table is a bare <table> and this rule
+    matches nothing.
+  */
+  .prose-note .tableWrapper {
+    overflow-x: auto;
+    /* The block spacing around a table, moved off the table itself so it does
+       not scroll away with it. */
+    margin: 1.75em 0;
+  }
+
+  .prose-note .tableWrapper > table {
+    margin: 0;
+    /*
+      100%, and the table view is configured never to override it — see
+      lastColumnResizable in tableNodes.ts. This is the line that turns a drag
+      into a trade: the total is pinned to the measure, so the pixels one
+      column gains have to come out of another.
+    */
+    width: 100%;
+    /*
+      `auto`, deliberately, even though the columns are resizable.
+
+      Under `fixed` every untouched column is exactly one Nth of the table, so
+      a note with one prose column and two counting columns opens with two
+      thirds of its width holding the digit 5 — and the writer has to drag
+      three boundaries before it reads properly. Under `auto` it opens looking
+      right and the drag becomes an adjustment rather than a repair.
+
+      A width the user HAS chosen still holds, because `overflow-wrap: anywhere`
+      below drops each cell's minimum to a single character, leaving nothing
+      inside the column able to argue for more room.
+    */
+    table-layout: auto;
+    /* collapse, so neighbouring cells share one hairline. `separate` draws two
+       borders side by side and the grid reads as double-ruled. */
+    border-collapse: collapse;
+    /*
+      Tighter than the 1.71 prose leading this inherits.
+      Body leading is generous because a paragraph is read along its lines; a
+      table is read ACROSS them, and loose leading makes the eye lose the row
+      it was following on the way to the next column.
+    */
+    line-height: 1.5;
+  }
+
+  /* `prose` rules a table with two horizontal lines and nothing else. This grid
+     draws its own cell borders, so those would land on top as a second, heavier
+     rule under the header and every row. */
+  .prose-note thead,
+  .prose-note tbody tr {
+    border: 0;
+  }
+
+  .prose-note th,
+  .prose-note td {
+    /* `relative`, so .selectedCell's overlay and the resize handle have
+       something to be absolute to. */
+    position: relative;
+    border: 1px solid var(--color-rule);
+    /*
+      Wider left and right than top and bottom, deliberately.
+      A cell's vertical neighbour is a blank line; its horizontal neighbour is
+      a rule with more text right behind it, so the eye needs more room there
+      to tell "end of this cell" from "start of the next". It also keeps the
+      last word clear of the resize handle sitting on that same edge.
+
+      `prose` zeroes this on the first and last column — correct for the
+      borderless tables it is designed for, wrong the moment a cell has walls.
+    */
+    padding: 0.5rem 0.8125rem;
+    /*
+      Top, not baseline. Cells in a row rarely hold the same amount of text,
+      and hanging a one-line cell off the baseline of a three-line neighbour
+      leaves it floating in the middle of the row with no visible reason.
+    */
+    vertical-align: top;
+    /*
+      `anywhere` and not `break-word`, and the difference is the entire reason
+      the resizing works: only `anywhere` also shrinks the cell's MINIMUM
+      width. With `break-word` a single long URL keeps a hard floor under its
+      column, and dragging that boundary narrower just snaps back.
+    */
+    overflow-wrap: anywhere;
+  }
+
+  .prose-note th {
+    /* Mixed toward the page rather than the raw token: a header is a label for
+       the column, not a second piece of furniture competing with its contents. */
+    background: color-mix(in oklab, var(--color-tint) 55%, var(--color-page));
+    text-align: left;
+    font-weight: 600;
+  }
+
+  /*
+    The block margins prose gives a paragraph, removed inside a cell.
+
+    This is the single biggest thing separating a table that reads and one that
+    does not: 1.25em above and below every paragraph is most of a blank line on
+    each side, and a cell holding one number was spending three quarters of its
+    height on the space around it.
+  */
+  .prose-note th > *,
+  .prose-note td > * {
+    margin: 0;
+  }
+
+  /* A cell with genuinely more than one block still needs them told apart —
+     just by a gap, not by a full paragraph's worth of air. */
+  .prose-note th > * + *,
+  .prose-note td > * + * {
+    margin-top: 0.5em;
+  }
+
+  /* Lists in a cell keep their markers, but not prose's outdent: a cell has no
+     margin to hang them into, so the bullets fall outside the border. */
+  .prose-note th > ul,
+  .prose-note th > ol,
+  .prose-note td > ul,
+  .prose-note td > ol {
+    padding-inline-start: 1.1em;
+  }
+
+  /*
+    The cells prosemirror-tables considers selected.
+
+    An overlay rather than a background: a cell can carry its own fill — the
+    header row does — and repainting it would make a selected header look like
+    a body cell. A translucent layer on top tints whatever is underneath.
+  */
+  .prose-note .selectedCell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--color-primary);
+    opacity: 0.18;
+    pointer-events: none;
+  }
+
+  /*
+    The column resize handle.
+
+    It exists only while the pointer is within a few pixels of a boundary — the
+    editor inserts it as a decoration on hover and drops it again on leave — so
+    everything below IS the hover state. There is nothing to fade in.
+
+    One of these is drawn per row of the boundary, which is what lets the plain
+    rule read as a single unbroken line down the whole table while the grip
+    below is drawn once, at the top, where a pointer approaching a column
+    boundary is already looking.
+
+    `pointer-events: none` on purpose, and it does NOT disable the drag: the
+    editor tracks the boundary by cursor coordinates, not by hits on this
+    element. Letting the strip catch events would instead put a dead zone over
+    the last character of every cell.
+  */
+  .prose-note .column-resize-handle {
+    position: absolute;
+    top: 0;
+    /* -1px on both edges so the strip covers the collapsed border rather than
+       sitting beside it, and meets the handle of the row below with no seam. */
+    right: -1px;
+    bottom: -1px;
+    width: 2px;
+    background: var(--color-primary);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* The grip. Only on the first row, so the boundary offers one thing to grab
+     rather than one per row stacked into a dotted column. */
+  .prose-note tr:first-child .column-resize-handle::after {
+    content: '';
+    position: absolute;
+    /* Centred on the 2px strip: half the 8px width either side. */
+    left: -3px;
+    top: 0.375rem;
+    width: 8px;
+    height: 1.5rem;
+    border-radius: 999px;
+    background: var(--color-primary);
+    /* The page colour between the grip and the header fill, so the pill reads
+       as an object sitting on the rule instead of a thick patch of it. */
+    box-shadow: 0 0 0 2px var(--color-page);
+  }
+
+  /*
+    Applied to the editor root while a boundary is live, and kept there for the
+    whole drag. Without it the cursor flickers back to a text caret the instant
+    the pointer leaves the few pixels around the rule — which is immediately,
+    because dragging is precisely moving away from it.
+  */
+  .prose-note.resize-cursor {
+    cursor: col-resize;
+  }
+
+  /*
+    The column being sized, for as long as the drag lasts.
+
+    Tinting it answers the question a drag actually raises — "which side am I
+    growing?" — which the rule alone cannot, because it sits exactly between
+    the two candidates.
+  */
+  .prose-note .column-resize-dragging {
+    background: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  }
+}

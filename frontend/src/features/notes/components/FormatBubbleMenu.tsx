@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core';
+import { CellSelection } from '@tiptap/pm/tables';
 import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import type { ReactNode } from 'react';
@@ -66,10 +67,17 @@ export const FormatBubbleMenu = ({ editor }: FormatBubbleMenuProps) => {
   return (
     <BubbleMenu
       editor={editor}
+      // Explicit key, because TableMenu is a second BubbleMenu and they would
+      // otherwise both claim ProseMirror's default `bubbleMenu` plugin key —
+      // which is a mount-time crash, not a layout bug.
+      pluginKey="formatMenu"
       shouldShow={({ editor: instance, from, to }) => {
         // An empty selection is a caret, not a phrase — showing the menu there
         // would cover the line being written.
         if (from === to) return false;
+        // Whole cells selected is a structural selection, not a phrase.
+        // TableMenu owns that one, at the same coordinates.
+        if (instance.state.selection instanceof CellSelection) return false;
         // Inside a code block the marks are inert, so the menu would be a row
         // of buttons that silently do nothing.
         return !instance.isActive('codeBlock');

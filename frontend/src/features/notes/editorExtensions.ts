@@ -1,4 +1,5 @@
 import type { Extensions } from '@tiptap/core';
+import type { ResolvedPos } from '@tiptap/pm/model';
 import UniqueID from '@tiptap/extension-unique-id';
 // Placeholder is not part of StarterKit in Tiptap v3; it lives in the
 // @tiptap/extensions utility bundle.
@@ -7,6 +8,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { AnnotationNode } from './annotationNode';
 import { BlockLinkNode } from './blockLinkNode';
 import { Column, Columns } from './columnsNode';
+import { NoteTable, NoteTableCell, NoteTableHeader, NoteTableRow } from './tableNodes';
 
 /**
  * Block types that receive a stable `id` attribute.
@@ -68,6 +70,13 @@ export const noteExtensions: Extensions = [
   Columns,
   Column,
 
+  // Structure too, and for the same reason: a note stored as a grid has to come
+  // back as a grid, cell for cell, in any consumer. See tableNodes.ts.
+  NoteTable,
+  NoteTableRow,
+  NoteTableHeader,
+  NoteTableCell,
+
   /**
    * Stamps `attrs.id` (a UUID v4) onto every block listed above.
    *
@@ -92,7 +101,26 @@ export const noteExtensions: Extensions = [
   Placeholder.configure({
     // The empty line is the only place the `/` menu is discoverable, so the
     // placeholder has to teach it — there is no toolbar to find it in.
-    placeholder: ({ node }) =>
-      node.type.name === 'heading' ? 'Heading' : "Write, or press '/' for blocks",
+    placeholder: ({ editor, node, pos }) => {
+      if (node.type.name === 'heading') return 'Heading';
+      // Nothing inside a table cell. The lesson has already been given by the
+      // time someone is filling in a grid, and a cell is a few characters wide:
+      // a sentence about the `/` menu does not fit, it just overflows the one
+      // cell holding the caret and shoves the column open.
+      if (isInsideCell(editor.state.doc.resolve(pos))) return '';
+
+      return "Write, or press '/' for blocks";
+    },
   }),
 ];
+
+/** Cell node names, kept next to the only place that has to recognise them. */
+const CELL_TYPES = new Set(['tableCell', 'tableHeader']);
+
+const isInsideCell = ($pos: ResolvedPos): boolean => {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    if (CELL_TYPES.has($pos.node(depth).type.name)) return true;
+  }
+
+  return false;
+};

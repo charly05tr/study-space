@@ -15,6 +15,7 @@ import type { NoteDocument } from '../types';
 import { AnnotationPicker } from './AnnotationPicker';
 import { FormatBubbleMenu } from './FormatBubbleMenu';
 import { SaveIndicator } from './SaveIndicator';
+import { TableMenu } from './TableMenu';
 
 /** Stable identity: `?? []` inline would rebuild the picker's list every render. */
 const NO_ANNOTATIONS: Annotation[] = [];
@@ -154,6 +155,8 @@ export const BlockEditor = ({
         </div>
 
         <FormatBubbleMenu editor={editor} />
+        {/* Mutually exclusive with the one above — see their `shouldShow`. */}
+        <TableMenu editor={editor} />
         <EditorContent editor={editor} />
 
         {pickerQuery !== null && (

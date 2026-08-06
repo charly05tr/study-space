@@ -1,6 +1,7 @@
 import type { ChainedCommands } from '@tiptap/core';
 import type { Annotation } from '../annotations/types';
 import type { AnnotationNodeAttributes } from './annotationNode';
+import { DEFAULT_TABLE } from './tableNodes';
 
 /** Section headings inside the menu. Shown only when the group changes. */
 export const BLOCKS_GROUP = 'Blocks';
@@ -88,6 +89,12 @@ const BLOCK_ITEMS: Omit<SlashItem, 'key' | 'group'>[] = [
     hint: 'Monospaced block',
     keywords: ['codeblock', 'snippet', 'pre', '```'],
     run: (chain) => chain.setCodeBlock(),
+  },
+  {
+    title: 'Table',
+    hint: 'Rows and columns',
+    keywords: ['grid', 'rows', 'columns', 'cells', 'matrix', 'compare'],
+    run: (chain) => chain.insertTable(DEFAULT_TABLE),
   },
   {
     title: 'Two columns',

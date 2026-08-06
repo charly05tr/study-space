@@ -26,6 +26,16 @@ describe('filterSlashItems', () => {
     expect(titles('---')).toEqual(['Divider']);
   });
 
+  it('reaches the table by name and by what people call it', () => {
+    expect(titles('table')).toEqual(['Table']);
+    expect(titles('rows')).toEqual(['Table']);
+    // "grid" and "columns" describe both blocks, and the menu has to keep
+    // offering both — with the table first, because it is the one that is
+    // literally made of columns.
+    expect(titles('grid')).toEqual(['Table', 'Two columns']);
+    expect(titles('columns')).toEqual(['Table', 'Two columns']);
+  });
+
   it('returns both lists for the shared "list" keyword', () => {
     expect(titles('list')).toEqual(['Bulleted list', 'Numbered list']);
   });

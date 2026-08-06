@@ -12,7 +12,21 @@ import { SLASH_ITEMS } from './slashMenuItems';
 
 let editor: Editor | null = null;
 
-const runItem = (title: string) => {
+/**
+ * A document node, as these tests need to read it.
+ *
+ * `getJSON()` types every child as "block node OR text node", and a text node
+ * carries neither `content` nor `attrs` — so descending into a table cell would
+ * mean proving at every level that the thing in hand is not a run of text.
+ * These tests only ever walk block structure, so they say it once here.
+ */
+interface JsonNode {
+  type?: string;
+  attrs?: Record<string, unknown> | null;
+  content?: JsonNode[];
+}
+
+const runItem = (title: string): JsonNode[] => {
   const item = SLASH_ITEMS.find((candidate) => candidate.title === title);
   if (!item) throw new Error(`No slash item titled "${title}"`);
 
@@ -27,7 +41,7 @@ const runItem = (title: string) => {
   });
   item.run(editor.chain().focus()).run();
 
-  return editor.getJSON().content ?? [];
+  return (editor.getJSON().content ?? []) as JsonNode[];
 };
 
 const firstNode = (title: string) => runItem(title)[0];
@@ -78,14 +92,31 @@ describe('slash item commands', () => {
     expect(columns?.content?.map((node) => node.type)).toEqual(['column', 'column']);
   });
 
+  it('Table inserts a 3x3 grid with a header row', () => {
+    const table = runItem('Table').find((node) => node.type === 'table');
+    const rows = table?.content ?? [];
+
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.content?.length === 3)).toBe(true);
+    // Header row first, body cells everywhere else — the shape a labelled study
+    // table is almost always in, so nobody has to build it by hand.
+    expect(rows[0].content?.map((cell) => cell.type)).toEqual([
+      'tableHeader',
+      'tableHeader',
+      'tableHeader',
+    ]);
+    expect(rows[1].content?.every((cell) => cell.type === 'tableCell')).toBe(true);
+  });
+
   /**
-   * The two items that produce no addressable block of their own.
+   * The items that produce no addressable block of their own.
    *
-   * A rule carries no text to link. A column split carries text, but only its
-   * children's — it is layout, and an id on the container would draw the same
-   * words on the map twice. The test below covers what IS addressable inside it.
+   * A rule carries no text to link. A column split and a table carry text, but
+   * only their children's — they are structure, and an id on the container
+   * would draw the same words on the map twice. The tests below cover what IS
+   * addressable inside them.
    */
-  const LAYOUT_ONLY = new Set(['Divider', 'Two columns']);
+  const LAYOUT_ONLY = new Set(['Divider', 'Two columns', 'Table']);
 
   it('every item keeps a UniqueID on the block it produces', () => {
     // The whole point of the editor: a block the 3D map cannot address is a
@@ -108,6 +139,21 @@ describe('slash item commands', () => {
       // and extract_blocks reaches it by walking straight through the two
       // containers above.
       expect(column.content?.[0].attrs?.id).toEqual(expect.any(String));
+    }
+  });
+
+  it('a table is unaddressable but every cell in it is not', () => {
+    const table = runItem('Table').find((node) => node.type === 'table');
+
+    expect(table?.attrs?.id).toBeUndefined();
+    for (const row of table?.content ?? []) {
+      expect(row.attrs?.id).toBeUndefined();
+      for (const cell of row.content ?? []) {
+        expect(cell.attrs?.id).toBeUndefined();
+        // The paragraph inside the cell. This is the node extract_blocks keeps
+        // — it walks straight through the three containers above it.
+        expect(cell.content?.[0].attrs?.id).toEqual(expect.any(String));
+      }
     }
   });
 
