@@ -13,6 +13,7 @@ from apps.studyspace.api.views import (
     StudyspaceViewSet,
     NoteViewSet,
     SourceViewSet,
+    ReferenceViewSet,
     AnnotationViewSet,
     BlockViewSet,
     BlockLinkViewSet,
@@ -25,6 +26,7 @@ router.register(r'users', UserViewSet, basename='users')
 router.register(r'studyspaces', StudyspaceViewSet, basename='studyspaces')
 router.register(r'notes', NoteViewSet, basename='notes')
 router.register(r'sources', SourceViewSet, basename='sources')
+router.register(r'references', ReferenceViewSet, basename='references')
 router.register(r'annotations', AnnotationViewSet, basename='annotations')
 router.register(r'blocks', BlockViewSet, basename='blocks')
 router.register(r'block-links', BlockLinkViewSet, basename='block-links')

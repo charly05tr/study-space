@@ -11,12 +11,14 @@ from apps.studyspace.api.filters import (
     AnnotationFilter,
     BlockFilter,
     BlockLinkFilter,
+    ReferenceFilter,
     StudySessionFilter,
 )
 from apps.studyspace.api.serializers import *
 from apps.studyspace.services.block_service import BlockIndexService
 from apps.studyspace.services.concept_graph_service import ConceptGraphService
 from apps.studyspace.services.note_service import NoteService
+from apps.studyspace.services.reference_service import ReferenceService
 from apps.studyspace.services.source_service import SourceService
 from apps.studyspace.services.annotation_service import AnnotationService
 from apps.studyspace.services.study_session_service import StudySessionService
@@ -38,7 +40,10 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
         
         # Optimizacion de la query
 
-        if self.action == "retrieve":
+        # Editar entra por el mismo camino que ver: `update` escribe description
+        # y responde el detalle completo, asi que la fila recortada de la lista
+        # obligaria a Django a ir a buscar cada campo diferido de a uno.
+        if self.action in ("retrieve", "update", "partial_update"):
             qs = qs.prefetch_related(
                 "notes",
                 "references",
@@ -48,7 +53,7 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
 
         else:
             qs = qs.only("id", "title", "created_at").prefetch_related("tags")
-            
+
         return qs
 
     def get_serializer_class(self):
@@ -106,16 +111,21 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         partial = kwargs.get('partial', False)
         studyspace = self.get_object()
-        
+
         serializer = self.get_serializer(studyspace, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
-         
+
         data = serializer.validated_data.copy()
-        tags = data.pop('tags', [])
-        
+        # None y no []: un PATCH que no menciona las tags no las tiene que
+        # tocar. Con [] como default, corregir un titulo desde el detalle
+        # borraba todas las etiquetas del espacio sin pedirlo.
+        tags = data.pop('tags', None)
+
         studyspace = self.service.update_studyspace(data=data, studyspace=studyspace, tags=tags)
-                
-        return Response(StudyspaceListSerializer(studyspace).data, status=status.HTTP_200_OK)
+
+        # El detalle y no la lista: quien edita esta parado en la pagina del
+        # studyspace, y la lista no trae ni la descripcion que acaba de escribir.
+        return Response(StudyspaceDetailSerializer(studyspace).data, status=status.HTTP_200_OK)
     
     
 class NoteViewSet(viewsets.ModelViewSet):
@@ -211,6 +221,59 @@ class AnnotationViewSet(viewsets.ModelViewSet):
             raise ValidationError("La fuente no existe o no te pertenece.")
 
         serializer.instance = self.service.create_annotation(serializer.validated_data)
+
+
+class ReferenceViewSet(viewsets.ModelViewSet):
+    """La bibliografia de un studyspace: agregar, corregir, sacar.
+
+    Se escribe entera desde acá y no desde el studyspace: una cita se agrega
+    mientras se estudia, de a una, y meterlas dentro del PATCH del espacio
+    obligaria a reenviar la lista completa para cambiarle el autor a una sola.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReferenceSerializer
+    filterset_class = ReferenceFilter
+
+    # La pagina de detalle ya trae las references adentro del studyspace; esta
+    # lista existe para leer la bibliografia de un espacio completa, y cortarla
+    # en 10 con la paginacion global la dejaria a medias.
+    pagination_class = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = ReferenceService()
+        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+
+    def get_queryset(self):
+        return self.service.get_user_references(user=self.request.user)
+
+    def _assert_owned_studyspace(self, serializer):
+        """Sin esto se podria citar dentro del studyspace de otra cuenta.
+
+        get_queryset filtra la lectura, no la escritura. Mismo guard que
+        NoteViewSet.create y AnnotationViewSet.perform_create.
+
+        En un PATCH el campo puede no venir: ahi no hay nada que validar, la
+        referencia se queda en el espacio que ya tenia.
+        """
+        studyspace = serializer.validated_data.get('studyspace')
+        if studyspace is None:
+            return
+
+        owned = self.studyspace_service.get_user_studyspaces(user=self.request.user)
+        if not owned.filter(pk=studyspace.pk).exists():
+            raise ValidationError("El studyspace no existe o no te pertenece.")
+
+    def perform_create(self, serializer):
+        self._assert_owned_studyspace(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        # Tambien al editar: mover una referencia es elegir un studyspace nuevo,
+        # y ese destino se valida igual que el de la creacion.
+        self._assert_owned_studyspace(serializer)
+        serializer.save()
 
 
 class SourceViewSet(viewsets.ModelViewSet):

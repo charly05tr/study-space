@@ -20,17 +20,23 @@ class StudyspaceService:
         
         return studyspace
     
-    def update_studyspace(self, data: dict, studyspace: Studyspace, tags: list[str]) -> Studyspace:
+    def update_studyspace(
+        self, data: dict, studyspace: Studyspace, tags: list[str] | None = None
+    ) -> Studyspace:
         # Actualizar datos
         for key, value in data.items():
-            setattr(studyspace, key, value) 
+            setattr(studyspace, key, value)
         studyspace.save()
-        
-        # El cliente tiene que enviar todas las tags, las que no envien se eliminan
-        studyspace.tags.set(
-            [Tag.objects.get_or_create(name=name)[0] for name in tags]
-        )
-        
+
+        # None no es lo mismo que []. Una lista vacia borra las tags a proposito;
+        # None significa que el request ni las nombro, y pisarlas igual convertia
+        # cada correccion de titulo en un borrado silencioso de etiquetas.
+        if tags is not None:
+            # El cliente tiene que enviar todas las tags, las que no envien se eliminan
+            studyspace.tags.set(
+                [Tag.objects.get_or_create(name=name)[0] for name in tags]
+            )
+
         return studyspace
         
     def get_user_studyspaces(self, user) -> list[Studyspace]:

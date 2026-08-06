@@ -47,7 +47,20 @@ class SourceMinimalSerializer(serializers.ModelSerializer):
 class ReferenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reference
-        fields = "__all__"
+        # Explícito y no "__all__": este serializer tambien escribe, y con
+        # "__all__" cualquier campo que se le agregue al modelo mas adelante
+        # queda editable desde la API sin que nadie lo haya decidido.
+        fields = [
+            'id',
+            'url',
+            'title',
+            'reference_type',
+            'authors',
+            'publication_date',
+            'studyspace',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
         
         
 class StudyspaceDetailSerializer(serializers.ModelSerializer):

@@ -5,6 +5,7 @@ export type { ButtonVariant, ButtonSize } from './Button';
 
 export { Input, fieldClasses, labelClasses } from './Input';
 export { Textarea } from './Textarea';
+export { Select } from './Select';
 
 export { Card, CardHeader, CardTitle, CardDescription, CardBody, CardFooter } from './Card';
 export { Divider } from './Divider';

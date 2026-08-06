@@ -14,12 +14,13 @@ import { formatDate } from '../../../lib/formatDate';
 import { GraphSectionMount } from '../../graph/components/GraphSectionMount';
 import { AddNoteForm } from '../../notes/components/AddNoteForm';
 import { NoteRow } from '../../notes/components/NoteRow';
+import { ReferencesSection } from '../../references/components/ReferencesSection';
 import { SessionsSection } from '../../sessions/components/SessionsSection';
 import { AddSourceForm } from '../../sources/components/AddSourceForm';
 import { SourceRow } from '../../sources/components/SourceRow';
-import { DetailRow, DetailSection } from '../components/DetailSection';
+import { DetailSection } from '../components/DetailSection';
+import { EditStudyspaceForm } from '../components/EditStudyspaceForm';
 import { useStudyspace } from '../hooks/useStudyspace';
-import { REFERENCE_TYPE_LABEL } from '../labels';
 
 const BackLink = () => (
   <Link
@@ -36,6 +37,7 @@ export const StudyspaceDetailPage = () => {
   // Declared above the early returns: hooks cannot run conditionally.
   const [addingSource, setAddingSource] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
+  const [editing, setEditing] = useState(false);
   const { data: studyspace, isPending, isError, error, refetch } = useStudyspace(id);
 
   if (isPending) {
@@ -74,26 +76,43 @@ export const StudyspaceDetailPage = () => {
       <header className="flex flex-col gap-4">
         <BackLink />
 
-        <div>
-          <h1 className="font-display text-4xl text-ink">{studyspace.title}</h1>
-          <p className="mt-2 font-heading text-xs uppercase tracking-[0.14em] text-muted">
-            Created <time dateTime={studyspace.created_at}>{formatDate(studyspace.created_at)}</time>
-            {' · '}
-            Updated <time dateTime={studyspace.updated_at}>{formatDate(studyspace.updated_at)}</time>
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-4xl text-ink">{studyspace.title}</h1>
+            <p className="mt-2 font-heading text-xs uppercase tracking-[0.14em] text-muted">
+              Created{' '}
+              <time dateTime={studyspace.created_at}>{formatDate(studyspace.created_at)}</time>
+              {' · '}
+              Updated{' '}
+              <time dateTime={studyspace.updated_at}>{formatDate(studyspace.updated_at)}</time>
+            </p>
+          </div>
+
+          <Button variant="quiet" size="sm" onClick={() => setEditing((open) => !open)}>
+            {editing ? 'Close' : 'Edit'}
+          </Button>
         </div>
 
-        {studyspace.tags.length > 0 && (
-          <ul className="flex flex-wrap gap-2">
-            {studyspace.tags.map((tag) => (
-              <li key={tag}>
-                <Badge>{tag}</Badge>
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* The form replaces the heading's metadata rather than sitting beside
+            it: the title, the tags and the description would otherwise be on
+            screen twice, and the copy below would be the stale one. */}
+        {editing ? (
+          <EditStudyspaceForm studyspace={studyspace} onDone={() => setEditing(false)} />
+        ) : (
+          <>
+            {studyspace.tags.length > 0 && (
+              <ul className="flex flex-wrap gap-2">
+                {studyspace.tags.map((tag) => (
+                  <li key={tag}>
+                    <Badge>{tag}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-        <p className="max-w-measure text-ink">{studyspace.description}</p>
+            <p className="max-w-measure text-ink">{studyspace.description}</p>
+          </>
+        )}
 
         <Divider ornament className="max-w-40" />
       </header>
@@ -148,34 +167,7 @@ export const StudyspaceDetailPage = () => {
           </ul>
         </DetailSection>
 
-        <DetailSection
-          title="References"
-          count={studyspace.references.length}
-          emptyMessage="No references saved yet."
-        >
-          <ul>
-            {studyspace.references.map((reference) => (
-              <DetailRow key={reference.id}>
-                <span className="flex min-w-0 flex-col">
-                  <a
-                    href={reference.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="truncate text-primary-ink underline underline-offset-4"
-                  >
-                    {reference.title}
-                  </a>
-                  {reference.authors && (
-                    <span className="truncate text-sm text-muted">{reference.authors}</span>
-                  )}
-                </span>
-                <Badge>
-                  {REFERENCE_TYPE_LABEL[reference.reference_type] ?? reference.reference_type}
-                </Badge>
-              </DetailRow>
-            ))}
-          </ul>
-        </DetailSection>
+        <ReferencesSection studyspaceId={id} references={studyspace.references} />
       </div>
 
       {/*

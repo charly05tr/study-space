@@ -1,7 +1,7 @@
 from django.db.models import F, Q
 from django_filters import rest_framework as filters
 
-from apps.studyspace.models import Annotation, Block, BlockLink, StudySession
+from apps.studyspace.models import Annotation, Block, BlockLink, Reference, StudySession
 
 
 class AnnotationFilter(filters.FilterSet):
@@ -67,6 +67,19 @@ class StudySessionFilter(filters.FilterSet):
     class Meta:
         model = StudySession
         fields = ['studyspace', 'active']
+
+
+class ReferenceFilter(filters.FilterSet):
+    """La bibliografía se lee por espacio de estudio.
+
+    `reference_type` está porque una bibliografía larga se mira por tipo — los
+    libros de un lado, los papers del otro — y filtrarla en el cliente obligaría
+    a bajarla entera para esconder la mitad.
+    """
+
+    class Meta:
+        model = Reference
+        fields = ['studyspace', 'reference_type']
 
 
 class BlockLinkFilter(filters.FilterSet):

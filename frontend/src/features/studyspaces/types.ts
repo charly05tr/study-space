@@ -46,7 +46,7 @@ export type ReferenceType =
   | 'DOCUMENTATION'
   | 'OTHER';
 
-/** ReferenceSerializer uses fields = "__all__". */
+/** Shape of ReferenceSerializer. */
 export interface Reference {
   id: number;
   url: string;
@@ -81,3 +81,11 @@ export interface StudyspacePayload {
   description: string;
   tags?: string[];
 }
+
+/**
+ * A PATCH: every field is optional, and only what travels gets written.
+ *
+ * `tags` is the one to be careful with — sending it REPLACES the whole set, so
+ * omitting it is how you edit the title without touching the labels.
+ */
+export type StudyspaceUpdatePayload = Partial<StudyspacePayload>;

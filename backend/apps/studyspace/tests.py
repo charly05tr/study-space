@@ -673,3 +673,172 @@ class ConverterRegistryTests(SimpleTestCase):
             sorted(converters.CONVERTER_VERSIONS),
             sorted(mode for mode, _ in Source.ConverterMode.choices),
         )
+
+
+class ReferenceApiTests(APITestCase):
+    URL = '/api/references/'
+
+    def setUp(self):
+        from apps.studyspace.models import Studyspace
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+        self.client.force_authenticate(self.user)
+
+    def _create(self, **overrides):
+        payload = {
+            'studyspace': self.studyspace.pk,
+            'title': 'Operating System Concepts',
+            'url': 'https://example.com/osc',
+            'reference_type': 'BOOK',
+        }
+        payload.update(overrides)
+        return self.client.post(self.URL, payload, format='json')
+
+    def test_a_reference_is_created_inside_its_studyspace(self):
+        response = self._create()
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body['studyspace'], self.studyspace.pk)
+        self.assertEqual(body['reference_type'], 'BOOK')
+        # Los dos opcionales del modelo llegan nulos, no ausentes: el front los
+        # muestra condicionados a que tengan valor.
+        self.assertIsNone(body['authors'])
+        self.assertIsNone(body['publication_date'])
+
+    def test_an_unknown_type_is_refused(self):
+        self.assertEqual(self._create(reference_type='NEWSPAPER').status_code, 400)
+
+    def test_a_reference_needs_a_valid_url(self):
+        self.assertEqual(self._create(url='no-es-una-url').status_code, 400)
+
+    def test_editing_leaves_the_rest_of_the_fields_alone(self):
+        reference = self._create(authors='Silberschatz').json()
+
+        response = self.client.patch(
+            f"{self.URL}{reference['id']}/",
+            {'title': 'Operating System Concepts, 10th ed.'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['title'], 'Operating System Concepts, 10th ed.')
+        self.assertEqual(body['authors'], 'Silberschatz')
+        self.assertEqual(body['studyspace'], self.studyspace.pk)
+
+    def test_created_at_is_not_writable(self):
+        reference = self._create().json()
+        response = self.client.patch(
+            f"{self.URL}{reference['id']}/",
+            {'created_at': '1999-01-01T00:00:00Z'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['created_at'], reference['created_at'])
+
+    def test_deleting_removes_it_from_the_list(self):
+        reference = self._create().json()
+        self.assertEqual(
+            self.client.delete(f"{self.URL}{reference['id']}/").status_code, 204
+        )
+        self.assertEqual(self.client.get(self.URL).json(), [])
+
+    def test_the_list_is_filtered_by_studyspace(self):
+        from apps.studyspace.models import Studyspace
+
+        other = Studyspace.objects.create(title="Algebra", description="", user=self.user)
+        self._create()
+        self._create(studyspace=other.pk, title="Algebra lineal")
+
+        body = self.client.get(self.URL, {'studyspace': other.pk}).json()
+        self.assertEqual([item['title'] for item in body], ["Algebra lineal"])
+
+    def test_another_account_neither_sees_nor_touches_the_references(self):
+        from apps.users.models import User
+
+        reference = self._create().json()
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(intruder)
+
+        self.assertEqual(self.client.get(self.URL).json(), [])
+        self.assertEqual(
+            self.client.delete(f"{self.URL}{reference['id']}/").status_code, 404
+        )
+        # get_queryset filtra la lectura, no la escritura: sin el guard del
+        # viewset se podria citar dentro del espacio de otra cuenta.
+        self.assertEqual(self._create(title="ajena").status_code, 400)
+
+    def test_anonymous_requests_are_rejected(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.URL).status_code, 401)
+
+
+class StudyspaceUpdateApiTests(APITestCase):
+    URL = '/api/studyspaces/'
+
+    def setUp(self):
+        from apps.studyspace.models import Studyspace, Tag
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="Kernel y memoria", user=self.user
+        )
+        self.studyspace.tags.set(
+            [Tag.objects.create(name="kernel"), Tag.objects.create(name="memoria")]
+        )
+        self.client.force_authenticate(self.user)
+
+    def _patch(self, payload):
+        return self.client.patch(
+            f"{self.URL}{self.studyspace.pk}/", payload, format='json'
+        )
+
+    def test_editing_the_title_answers_the_full_detail(self):
+        response = self._patch({'title': 'Sistemas operativos I'})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['title'], 'Sistemas operativos I')
+        # La lista no trae ni la descripcion ni las notas: el que edita esta
+        # parado en el detalle y necesita la pagina entera de vuelta.
+        self.assertEqual(body['description'], 'Kernel y memoria')
+        self.assertIn('notes', body)
+        self.assertIn('references', body)
+
+    def test_editing_the_description_leaves_the_title_alone(self):
+        body = self._patch({'description': 'Planificacion de procesos'}).json()
+        self.assertEqual(body['description'], 'Planificacion de procesos')
+        self.assertEqual(body['title'], 'Sistemas operativos')
+
+    def test_a_patch_that_does_not_name_the_tags_keeps_them(self):
+        # Este era el bug: con [] como default, corregir un titulo borraba
+        # todas las etiquetas del espacio sin que nadie lo pidiera.
+        body = self._patch({'title': 'Sistemas operativos I'}).json()
+        self.assertEqual(sorted(body['tags']), ['kernel', 'memoria'])
+
+    def test_sending_the_tags_replaces_the_whole_set(self):
+        body = self._patch({'tags': ['kernel', 'concurrencia']}).json()
+        self.assertEqual(sorted(body['tags']), ['concurrencia', 'kernel'])
+
+    def test_an_empty_list_clears_the_tags(self):
+        # [] sigue significando "sacalas todas": es una lista que el cliente
+        # mando a proposito, no un campo que no vino.
+        self.assertEqual(self._patch({'tags': []}).json()['tags'], [])
+
+    def test_another_account_cannot_edit_it(self):
+        from apps.users.models import User
+
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(intruder)
+        self.assertEqual(self._patch({'title': 'mio ahora'}).status_code, 404)

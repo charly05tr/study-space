@@ -34,14 +34,3 @@ export const DetailSection = ({
     {count === 0 ? <p className="text-sm text-muted">{emptyMessage}</p> : children}
   </section>
 );
-
-interface DetailRowProps {
-  children: ReactNode;
-}
-
-/** One entry inside a section. Hairline separators, never a boxed card. */
-export const DetailRow = ({ children }: DetailRowProps) => (
-  <li className="flex items-center justify-between gap-4 border-b border-rule/60 py-2 last:border-b-0">
-    {children}
-  </li>
-);
