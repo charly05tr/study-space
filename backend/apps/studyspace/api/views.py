@@ -399,6 +399,11 @@ class SourceViewSet(viewsets.ModelViewSet):
 
         return Response({
             'title': source.title,
+            # A que espacio de estudio pertenece. El lector lo necesita para
+            # saber si hay una sesion de estudio abierta: el temporizador se
+            # abre por studyspace, no por fuente, y sin esto habria que pedir
+            # el source entero de nuevo solo para leerle la clave foranea.
+            'study_space': source.study_space_id,
             # El lector aplica la tipografia distinto segun el conversor: uno
             # escala el cuerpo de letra, el otro hace zoom sobre la pagina.
             'converter_mode': source.converter_mode,

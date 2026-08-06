@@ -44,6 +44,9 @@ export const FocusControls = ({ page, total, onPrevious, onNext, onExit }: Focus
       type="button"
       onClick={onExit}
       aria-label="Exit focus mode"
+      // The header is gone in here, so this button is the only thing left that
+      // can mention the key.
+      title="Exit focus mode (F or Esc)"
       className={cn(buttonClasses, 'absolute top-4 right-4 h-9 px-3 font-heading text-xs uppercase tracking-[0.14em]')}
     >
       Exit

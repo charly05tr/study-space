@@ -14,6 +14,15 @@ interface PomodoroStore {
   /** Which session the timer below belongs to. */
   sessionId: number | null;
   timer: PomodoroState | null;
+  /**
+   * Whether a phase ending rings.
+   *
+   * On by default: the point of a timer you can look away from is that it tells
+   * you. Off is one click away because someone reading in a library needs it to
+   * be, and it persists — being asked to mute the same app twice is worse than
+   * the sound.
+   */
+  soundOn: boolean;
   /** Starts (or adopts) the timer of a session, discarding any other. */
   attach: (sessionId: number, phase?: Phase) => void;
   detach: () => void;
@@ -21,6 +30,7 @@ interface PomodoroStore {
   resumeTimer: () => void;
   restartPhase: () => void;
   nextPhase: () => void;
+  toggleSound: () => void;
 }
 
 /**
@@ -40,6 +50,7 @@ export const usePomodoroStore = create<PomodoroStore>()(
     (set, get) => ({
       sessionId: null,
       timer: null,
+      soundOn: true,
 
       attach: (sessionId, phase = 'focus') => {
         // Already this session's timer: adopt it rather than restart the phase
@@ -60,6 +71,8 @@ export const usePomodoroStore = create<PomodoroStore>()(
         set((state) => (state.timer ? { timer: restart(state.timer, Date.now()) } : state)),
       nextPhase: () =>
         set((state) => (state.timer ? { timer: advance(state.timer, Date.now()) } : state)),
+
+      toggleSound: () => set((state) => ({ soundOn: !state.soundOn })),
     }),
     { name: 'pomodoro-timer' },
   ),

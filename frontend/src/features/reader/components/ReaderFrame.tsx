@@ -106,6 +106,13 @@ interface ReaderFrameProps {
   onPagesCounted: (total: number) => void;
   /** Keyboard paging from inside the frame, where key events do not bubble out. */
   onNavigate: (delta: number) => void;
+  /**
+   * Every other key pressed inside the frame, forwarded raw.
+   *
+   * The frame reports, the page decides what a key means — the alternative was
+   * a prop per shortcut, and the frame having opinions about the pomodoro.
+   */
+  onShortcut: (key: string) => void;
 }
 
 /**
@@ -139,6 +146,7 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
       onNoteMove,
       onPagesCounted,
       onNavigate,
+      onShortcut,
     },
     ref,
   ) => {
@@ -162,8 +170,22 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
 
     // Read from inside frame listeners, which are attached once on load and
     // would otherwise capture the first render's props forever.
-    const latest = useRef({ onNavigate, onSelection, onNoteHover, onNoteMove, trackedNoteId });
-    latest.current = { onNavigate, onSelection, onNoteHover, onNoteMove, trackedNoteId };
+    const latest = useRef({
+      onNavigate,
+      onShortcut,
+      onSelection,
+      onNoteHover,
+      onNoteMove,
+      trackedNoteId,
+    });
+    latest.current = {
+      onNavigate,
+      onShortcut,
+      onSelection,
+      onNoteHover,
+      onNoteMove,
+      trackedNoteId,
+    };
 
     const blobUrl = useMemo(
       () => URL.createObjectURL(new Blob([html], { type: 'text/html' })),
@@ -538,6 +560,11 @@ export const ReaderFrame = forwardRef<ReaderFrameHandle, ReaderFrameProps>(
           latest.current.onNavigate(1);
         } else if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
           latest.current.onNavigate(-1);
+        } else if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+          // Anything else goes up to the page. Modifier combos are left alone:
+          // those are the browser's — Ctrl+F, Cmd+C — and stealing them inside
+          // a document you are reading would be the worst place to do it.
+          latest.current.onShortcut(event.key);
         }
       });
 

@@ -8,6 +8,7 @@ import {
   useDeleteAnnotation,
 } from '../../annotations/hooks/useAnnotations';
 import type { Annotation } from '../../annotations/types';
+import { PomodoroPeek } from '../../sessions/components/PomodoroPeek';
 import { AnnotationPanel } from '../components/AnnotationPanel';
 import { FocusControls } from '../components/FocusControls';
 import { ReaderColors } from '../components/ReaderColors';
@@ -16,6 +17,7 @@ import { ReaderFrame } from '../components/ReaderFrame';
 import type { ReaderFrameHandle, SelectionInfo } from '../components/ReaderFrame';
 import { SelectionToolbar } from '../components/SelectionToolbar';
 import type { ReaderMode } from '../readerStyles';
+import { actionForKey } from '../shortcuts';
 import { useThemeStore } from '../../../store/themeStore';
 import {
   MAX_FONT_SIZE,
@@ -63,6 +65,14 @@ export const ReaderPage = () => {
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
   const noteCard = useNoteCard();
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  /**
+   * The pomodoro widget held open by hand.
+   *
+   * Hovering the top edge reveals it too — this is the state the pointer cannot
+   * express: keeping it open while you read, or while you are somewhere else in
+   * the page entirely.
+   */
+  const [pomodoroPinned, setPomodoroPinned] = useState(false);
 
   // Single source of truth for paging. The frame renders whatever it is told.
   const [focusPage, setFocusPage] = useState(1);
@@ -104,17 +114,21 @@ export const ReaderPage = () => {
     [totalPages],
   );
 
-  const enterFocus = async () => {
+  // Memoised because the F shortcut depends on it, and an identity that changed
+  // every render would re-attach the document's key listener just as often.
+  const enterFocus = useCallback(async () => {
     // Start on the page being read, not back at the beginning.
     setFocusPage(frame.current?.currentPageFromReading() ?? 1);
     setMode('focus');
     setPanelOpen(false);
     try {
+      // Called straight out of the click or the keypress: fullscreen needs a
+      // user gesture, and the three setState calls above do not spend it.
       await shell.current?.requestFullscreen();
     } catch {
       // Fullscreen can be refused; focus mode still works inside the window.
     }
-  };
+  }, [setPanelOpen]);
 
   const exitFocus = useCallback(async () => {
     setMode('free');
@@ -147,6 +161,57 @@ export const ReaderPage = () => {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [handleNavigate, mode]);
+
+  /** What a key means here. The frame reports them; `shortcuts.ts` decides. */
+  const handleShortcut = useCallback(
+    (pressed: string) => {
+      const focusedNow = mode === 'focus';
+
+      switch (actionForKey(pressed, focusedNow)) {
+        case 'togglePomodoro':
+          setPomodoroPinned((open) => !open);
+          break;
+        case 'toggleFocus':
+          // A toggle, not a one-way door: Escape already leaves fullscreen, and
+          // a key that only enters is a key you press twice wondering why.
+          void (focusedNow ? exitFocus() : enterFocus());
+          break;
+        case 'toggleTheme':
+          toggleTheme();
+          break;
+        case 'largerText':
+          adjustFontSize(1);
+          break;
+        case 'smallerText':
+          adjustFontSize(-1);
+          break;
+        case 'toggleNotes':
+          togglePanel();
+          break;
+      }
+    },
+    [adjustFontSize, enterFocus, exitFocus, mode, toggleTheme, togglePanel],
+  );
+
+  // The same keys again, for when focus sits outside the frame — the header,
+  // the annotation panel, or nowhere in particular after a click.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // Typing "p" into a note is typing, not a shortcut. The frame's own
+      // listener needs no such guard: that document is not editable.
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest('input, textarea, [contenteditable="true"]')
+      ) {
+        return;
+      }
+      handleShortcut(event.key);
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [handleShortcut]);
 
   const dismissSelection = useCallback(() => {
     setSelection(null);
@@ -239,14 +304,18 @@ export const ReaderPage = () => {
             <h1 className="min-w-0 truncate font-heading text-sm text-muted">{data.title}</h1>
           </div>
 
+          {/* Every control that has a key says so. A shortcut nobody is told
+              about is a shortcut nobody uses, and the button is the only place
+              the reader ever gets to mention it. */}
           <div className="flex shrink-0 flex-wrap items-center gap-1">
-            <Button variant="quiet" size="sm" onClick={enterFocus}>
+            <Button variant="quiet" size="sm" title="Focus mode (F)" onClick={enterFocus}>
               Focus
             </Button>
             <Button
               variant="quiet"
               size="sm"
               aria-label="Decrease text size"
+              title="Smaller text (-)"
               disabled={fontSize <= MIN_FONT_SIZE}
               onClick={() => adjustFontSize(-1)}
             >
@@ -256,6 +325,7 @@ export const ReaderPage = () => {
               variant="quiet"
               size="sm"
               aria-label="Increase text size"
+              title="Larger text (+)"
               disabled={fontSize >= MAX_FONT_SIZE}
               onClick={() => adjustFontSize(1)}
             >
@@ -265,6 +335,7 @@ export const ReaderPage = () => {
               variant="quiet"
               size="sm"
               aria-pressed={dark}
+              title="Switch theme (T)"
               onClick={toggleTheme}
             >
               {dark ? 'Light' : 'Dark'}
@@ -274,6 +345,7 @@ export const ReaderPage = () => {
               variant="quiet"
               size="sm"
               aria-pressed={panelOpen}
+              title="Notes panel (N)"
               onClick={togglePanel}
             >
               Notes
@@ -281,6 +353,18 @@ export const ReaderPage = () => {
           </div>
         </header>
       )}
+
+      {/*
+        Hangs off the top edge in BOTH modes, on purpose. In focus mode the
+        header is gone and the page is nothing but the text — which is exactly
+        where knowing how long is left matters, and exactly where leaving to
+        find out costs the most.
+      */}
+      <PomodoroPeek
+        studyspaceId={data.study_space}
+        pinned={pomodoroPinned}
+        onTogglePin={() => setPomodoroPinned((open) => !open)}
+      />
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1">
@@ -303,6 +387,7 @@ export const ReaderPage = () => {
             onNoteMove={noteCard.onFrameMove}
             onPagesCounted={setTotalPages}
             onNavigate={handleNavigate}
+            onShortcut={handleShortcut}
           />
         </div>
 

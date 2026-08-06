@@ -11,6 +11,12 @@ import type { ConverterMode } from '../studyspaces/types';
 export interface ReaderPayload {
   title: string;
   /**
+   * The studyspace this source belongs to. Here and not fetched separately
+   * because the reader needs it to ask whether a study session is running, and
+   * a session is opened per studyspace, never per source.
+   */
+  study_space: number;
+  /**
    * Which converter produced `reader_html`. The frame reads the same fact off
    * the document's own `data-converter` attribute — this is here for anything
    * that has to know before the iframe has loaded.

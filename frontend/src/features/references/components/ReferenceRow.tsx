@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Badge, Button, ConfirmButton, useNotification } from '../../../components/ui';
+import { ActionMenu, Badge, Button, ConfirmButton, useNotification } from '../../../components/ui';
 import { getApiErrorMessage } from '../../../lib/apiError';
 import { formatDateOnly } from '../../../lib/formatDate';
 import { REFERENCE_TYPE_LABEL } from '../../studyspaces/labels';
@@ -76,18 +76,36 @@ export const ReferenceRow = ({ reference, studyspaceId }: ReferenceRowProps) => 
         <Badge>
           {REFERENCE_TYPE_LABEL[reference.reference_type] ?? reference.reference_type}
         </Badge>
-        <Button variant="quiet" size="sm" onClick={() => setEditing(true)}>
-          Edit
-        </Button>
-        {/* Two clicks like the other rows. A citation is cheap to type back,
-            but Delete should mean the same gesture everywhere on the page. */}
-        <ConfirmButton
-          confirmLabel="Delete for good"
-          loading={deleteReference.isPending}
-          onConfirm={handleDelete}
-        >
-          Delete
-        </ConfirmButton>
+        {/* No visible verb of its own, unlike Read or Open: the title IS the
+            link. Everything you can do to the citation goes behind the menu. */}
+        <ActionMenu label={`Actions for ${reference.title}`} width="w-52">
+          {(close) => (
+            <div className="flex flex-col gap-2">
+              <Button
+                variant="quiet"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  close();
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </Button>
+
+              {/* Two clicks like the other rows. A citation is cheap to type
+                  back, but Delete should mean the same gesture everywhere. */}
+              <ConfirmButton
+                confirmLabel="Delete for good"
+                className="w-full"
+                loading={deleteReference.isPending}
+                onConfirm={handleDelete}
+              >
+                Delete
+              </ConfirmButton>
+            </div>
+          )}
+        </ActionMenu>
       </span>
     </li>
   );
