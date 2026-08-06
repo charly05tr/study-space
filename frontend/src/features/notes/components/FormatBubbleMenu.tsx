@@ -4,6 +4,7 @@ import { useEditorState } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import type { ReactNode } from 'react';
 import { cn } from '../../../components/ui/cn';
+import { selectedMath } from '../mathNodes';
 
 interface MarkButtonProps {
   label: string;
@@ -78,6 +79,10 @@ export const FormatBubbleMenu = ({ editor }: FormatBubbleMenuProps) => {
         // Whole cells selected is a structural selection, not a phrase.
         // TableMenu owns that one, at the same coordinates.
         if (instance.state.selection instanceof CellSelection) return false;
+        // A selected formula is an atom, so `from !== to` here without there
+        // being any text to mark. MathMenu owns it, and would otherwise open
+        // underneath a row of buttons that can do nothing to a LaTeX string.
+        if (selectedMath(instance.state)) return false;
         // Inside a code block the marks are inert, so the menu would be a row
         // of buttons that silently do nothing.
         return !instance.isActive('codeBlock');

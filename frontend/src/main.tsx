@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router-dom'
+// KaTeX's own stylesheet, and it is not optional: without it every formula
+// renders as a vertical pile of unpositioned spans. Imported before index.css so
+// the note's own math rules land after it and win — see the block-math styles.
+import 'katex/dist/katex.min.css'
 import './index.css'
 import { router } from './routes/AppRouter'
 import { NotificationProvider } from './components/ui'

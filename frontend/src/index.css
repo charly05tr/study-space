@@ -524,4 +524,90 @@
   .prose-note .column-resize-dragging {
     background: color-mix(in oklab, var(--color-primary) 10%, transparent);
   }
+
+  /*
+    Formulas.
+
+    In `utilities` for the same reason as the tables above — `prose` emits into
+    this layer and would otherwise win — and immediately after them because the
+    two share the one structural problem: content with an intrinsic width that
+    the measure has no say over. A long derivation is exactly as capable of
+    dragging the whole page sideways as a wide grid is.
+  */
+  .prose-note [data-type='block-math'] {
+    /* The scroller, so a derivation wider than the column scrolls on its own
+       instead of taking the prose with it. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin: 1.5em 0;
+    padding: 0.5rem 0.25rem;
+    /* Centred, which is the one typographic convention every printed textbook
+       agrees on for a displayed equation. */
+    text-align: center;
+    /* A formula being written passes through empty. Without a floor the block
+       collapses to nothing, the panel anchored to it jumps to wherever that
+       leaves the line, and the user is typing into a control that moved. */
+    min-height: 2.5em;
+  }
+
+  .prose-note [data-type='block-math'] .katex-display {
+    /* KaTeX's own display margin, dropped: the block above already spaces it,
+       and the two together read as a gap someone forgot to close. */
+    margin: 0;
+  }
+
+  /*
+    Editable, so it has to look clickable — but only where clicking does
+    something. A read-only note renders the same node without this class.
+  */
+  .prose-note .tiptap-mathematics-render--editable {
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background-color 150ms;
+  }
+
+  .prose-note .tiptap-mathematics-render--editable:hover {
+    background: color-mix(in oklab, var(--color-primary) 8%, transparent);
+  }
+
+  /*
+    The formula being edited.
+
+    A tint and not an outline: the panel is already open below it, so this only
+    has to answer "which one am I typing into" — and a ring around a box that
+    changes size on every keystroke is a rectangle that never stops moving.
+  */
+  .prose-note [data-type='block-math'].ProseMirror-selectednode,
+  .prose-note [data-type='inline-math'].ProseMirror-selectednode {
+    background: color-mix(in oklab, var(--color-primary) 16%, transparent);
+    outline: none;
+  }
+
+  .prose-note [data-type='inline-math'] {
+    padding: 0 0.1em;
+  }
+
+  /*
+    KaTeX inherits `font-size: inherit` from nothing, so it sets its own 1.21em.
+    At the app's 19px body that is 23px of maths against 19px of prose, and an
+    inline formula sits visibly taller than the sentence holding it.
+  */
+  .prose-note .katex {
+    font-size: 1.08em;
+  }
+
+  /*
+    The fallback path, when KaTeX cannot render at all.
+
+    `throwOnError: false` handles the ordinary case — one bad command, drawn in
+    red, the rest intact — so this only fires for input that fails outright. It
+    shows the source instead of a blank space, because the source is the one
+    thing that lets the writer see what they typed and fix it.
+  */
+  .prose-note .block-math-error,
+  .prose-note .inline-math-error {
+    font-family: ui-monospace, monospace;
+    font-size: 0.85em;
+    color: var(--color-danger);
+  }
 }

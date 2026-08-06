@@ -36,6 +36,18 @@ describe('filterSlashItems', () => {
     expect(titles('columns')).toEqual(['Table', 'Two columns']);
   });
 
+  it('reaches the equation block by the parts nobody calls an equation', () => {
+    // The aliases are the entire reason `/math` is one block instead of
+    // fifteen: a formula is a tree, and only a block that holds LaTeX can nest
+    // a fraction inside an integral. Nobody types "equation" for that, though —
+    // they type the piece they are missing. See mathNodes.ts.
+    expect(titles('math')).toEqual(['Equation']);
+    expect(titles('fraction')).toEqual(['Equation']);
+    expect(titles('integral')).toEqual(['Equation']);
+    expect(titles('sqrt')).toEqual(['Equation']);
+    expect(titles('latex')).toEqual(['Equation']);
+  });
+
   it('returns both lists for the shared "list" keyword', () => {
     expect(titles('list')).toEqual(['Bulleted list', 'Numbered list']);
   });

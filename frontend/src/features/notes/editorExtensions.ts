@@ -8,6 +8,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { AnnotationNode } from './annotationNode';
 import { BlockLinkNode } from './blockLinkNode';
 import { Column, Columns } from './columnsNode';
+import { NoteMath } from './mathNodes';
 import { NoteTable, NoteTableCell, NoteTableHeader, NoteTableRow } from './tableNodes';
 
 /**
@@ -76,6 +77,12 @@ export const noteExtensions: Extensions = [
   NoteTableRow,
   NoteTableHeader,
   NoteTableCell,
+
+  // Schema for the third time, and the strictest case of the three: a formula
+  // is stored as a LaTeX string on an atom, so a consumer parsing without this
+  // does not degrade to plain text — it drops the node and loses the equation.
+  // See mathNodes.ts.
+  NoteMath,
 
   /**
    * Stamps `attrs.id` (a UUID v4) onto every block listed above.

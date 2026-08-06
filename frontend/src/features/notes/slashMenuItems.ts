@@ -1,6 +1,7 @@
 import type { ChainedCommands } from '@tiptap/core';
 import type { Annotation } from '../annotations/types';
 import type { AnnotationNodeAttributes } from './annotationNode';
+import { insertEquation } from './mathNodes';
 import { DEFAULT_TABLE } from './tableNodes';
 
 /** Section headings inside the menu. Shown only when the group changes. */
@@ -89,6 +90,40 @@ const BLOCK_ITEMS: Omit<SlashItem, 'key' | 'group'>[] = [
     hint: 'Monospaced block',
     keywords: ['codeblock', 'snippet', 'pre', '```'],
     run: (chain) => chain.setCodeBlock(),
+  },
+  {
+    title: 'Equation',
+    hint: 'Math formula',
+    /**
+     * The longest keyword list in the catalogue, and every entry earns its
+     * place. A formula is ONE block — see mathNodes.ts for why the parts of an
+     * expression cannot each be their own command — but nobody thinks "I need
+     * an equation block" when what they want is a fraction. They type what they
+     * want. These aliases are what let `/fraction`, `/integral` and `/sqrt`
+     * land on the one block that can actually hold them, with the palette
+     * already open on the other side.
+     */
+    keywords: [
+      'math',
+      'formula',
+      'equation',
+      'latex',
+      'katex',
+      'fraction',
+      'power',
+      'exponent',
+      'sqrt',
+      'root',
+      'integral',
+      'sum',
+      'limit',
+      'derivative',
+      'matrix',
+      'symbol',
+      'greek',
+      '$$',
+    ],
+    run: insertEquation,
   },
   {
     title: 'Table',

@@ -14,6 +14,7 @@ import { annotationToNodeAttrs } from '../slashMenuItems';
 import type { NoteDocument } from '../types';
 import { AnnotationPicker } from './AnnotationPicker';
 import { FormatBubbleMenu } from './FormatBubbleMenu';
+import { MathMenu } from './MathMenu';
 import { SaveIndicator } from './SaveIndicator';
 import { TableMenu } from './TableMenu';
 
@@ -155,8 +156,9 @@ export const BlockEditor = ({
         </div>
 
         <FormatBubbleMenu editor={editor} />
-        {/* Mutually exclusive with the one above — see their `shouldShow`. */}
+        {/* All three are mutually exclusive — see their `shouldShow`. */}
         <TableMenu editor={editor} />
+        <MathMenu editor={editor} />
         <EditorContent editor={editor} />
 
         {pickerQuery !== null && (

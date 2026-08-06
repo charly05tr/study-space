@@ -46,6 +46,38 @@ const runItem = (title: string): JsonNode[] => {
 
 const firstNode = (title: string) => runItem(title)[0];
 
+/**
+ * The catalogue driven the way the menu actually drives it.
+ *
+ * `runItem` hands each item a bare `chain().focus()`, which is NOT what happens
+ * in the app: SlashCommand builds `chain().focus().deleteRange(range)` so the
+ * block replaces the `/query` that was typed. The difference is not cosmetic —
+ * after deleteRange the chained transaction and `editor.state` disagree about
+ * every position in the document, and a command that reads the editor instead
+ * of its own transaction inserts at a position that no longer exists.
+ *
+ * That is a whole class of bug this suite could not see, and it is invisible
+ * until someone types the command for real: the chain throws, nothing is
+ * dispatched, and the menu item looks inert.
+ */
+const runTyped = (title: string): JsonNode[] => {
+  const item = SLASH_ITEMS.find((candidate) => candidate.title === title);
+  if (!item) throw new Error(`No slash item titled "${title}"`);
+
+  const query = `/${title.toLowerCase()}`;
+  editor = new Editor({
+    extensions: noteExtensions,
+    content: toEditorContent({ type: 'doc', content: [{ type: 'paragraph' }] }),
+  });
+  editor.chain().focus().insertContent(query).run();
+
+  // The range the suggestion plugin reports: the `/` and everything after it.
+  const to = editor.state.selection.from;
+  item.run(editor.chain().focus().deleteRange({ from: to - query.length, to })).run();
+
+  return (editor.getJSON().content ?? []) as JsonNode[];
+};
+
 afterEach(() => {
   editor?.destroy();
   editor = null;
@@ -115,14 +147,20 @@ describe('slash item commands', () => {
    * only their children's — they are structure, and an id on the container
    * would draw the same words on the map twice. The tests below cover what IS
    * addressable inside them.
+   *
+   * An equation is the odd one out: it is content, and it is not a container.
+   * It has no TEXT. The whole formula lives in a `latex` attribute, so
+   * `extract_blocks` would discard it on the empty-text check even if it were
+   * in INDEXED_TYPES — see block_service.py. An id here would buy a node the
+   * map cannot draw and a link nothing can point at.
    */
-  const LAYOUT_ONLY = new Set(['Divider', 'Two columns', 'Table']);
+  const UNADDRESSABLE = new Set(['Divider', 'Two columns', 'Table', 'Equation']);
 
   it('every item keeps a UniqueID on the block it produces', () => {
     // The whole point of the editor: a block the 3D map cannot address is a
     // block that did not really get created.
     for (const item of SLASH_ITEMS) {
-      if (LAYOUT_ONLY.has(item.title)) continue;
+      if (UNADDRESSABLE.has(item.title)) continue;
 
       const node = firstNode(item.title);
       expect(node.attrs?.id, `${item.title} has no id`).toEqual(expect.any(String));
@@ -156,6 +194,19 @@ describe('slash item commands', () => {
       }
     }
   });
+
+  it.each(SLASH_ITEMS.map((item) => item.title))(
+    '%s survives the deleteRange the menu wraps it in',
+    (title) => {
+      // Two failures, one assertion. A command reading `editor.state` throws
+      // RangeError on a position the chained document no longer has — that is
+      // how `/equation` shipped inert. A command that merely returns false
+      // leaves the typed query sitting in the paragraph, which is the same
+      // symptom from the user's side: the menu closed and nothing happened.
+      expect(() => runTyped(title)).not.toThrow();
+      expect(editor?.getText()).not.toContain('/');
+    },
+  );
 
   it('converts the block in place and leaves room to keep writing', () => {
     const nodes = runItem('Heading 1');

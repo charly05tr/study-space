@@ -1,0 +1,14 @@
+--- after mount ---
+menus(listbox): 0
+math panels: 0
+body children: 1
+  body[0] <DIV class=""> childCount=1
+  editorParent[0] <DIV class="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm" vis=>
+  editorParent[1] <DIV class="" vis=>
+--- after settle ---
+menus(listbox): 0
+math panels: 0
+body children: 1
+  body[0] <DIV class=""> childCount=1
+  editorParent[0] <DIV class="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm" vis=>
+  editorParent[1] <DIV class="" vis=>
