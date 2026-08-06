@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Badge, Button, useNotification } from '../../../components/ui';
+import { Badge, Button, ConfirmButton, useNotification } from '../../../components/ui';
 import { getApiErrorMessage } from '../../../lib/apiError';
 import { formatDateOnly } from '../../../lib/formatDate';
 import { REFERENCE_TYPE_LABEL } from '../../studyspaces/labels';
@@ -79,14 +79,15 @@ export const ReferenceRow = ({ reference, studyspaceId }: ReferenceRowProps) => 
         <Button variant="quiet" size="sm" onClick={() => setEditing(true)}>
           Edit
         </Button>
-        <Button
-          variant="danger"
-          size="sm"
+        {/* Two clicks like the other rows. A citation is cheap to type back,
+            but Delete should mean the same gesture everywhere on the page. */}
+        <ConfirmButton
+          confirmLabel="Delete for good"
           loading={deleteReference.isPending}
-          onClick={handleDelete}
+          onConfirm={handleDelete}
         >
           Delete
-        </Button>
+        </ConfirmButton>
       </span>
     </li>
   );

@@ -24,6 +24,24 @@ export const sourcesApi = {
     return response.data;
   },
 
+  /**
+   * The title, and only the title. The file is not replaceable: a new one would
+   * leave the converted HTML and every annotation anchor describing a document
+   * that no longer exists.
+   */
+  rename: async (sourceId: number, title: string): Promise<{ title: string }> => {
+    const response = await axios.patch(`${BASE_URL}/${sourceId}/`, { title });
+    return response.data;
+  },
+
+  /**
+   * Takes the uploaded file, the converted HTML and every annotation on it —
+   * the model cascades, and a post_delete signal removes both files from disk.
+   */
+  remove: async (sourceId: number): Promise<void> => {
+    await axios.delete(`${BASE_URL}/${sourceId}/`);
+  },
+
   convert: async ({ sourceId, mode }: ConvertPayload): Promise<ConvertResult> => {
     const response = await axios.post(
       `${BASE_URL}/${sourceId}/convert/`,

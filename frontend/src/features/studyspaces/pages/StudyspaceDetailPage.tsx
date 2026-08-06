@@ -162,7 +162,7 @@ export const StudyspaceDetailPage = () => {
         >
           <ul>
             {studyspace.notes.map((note) => (
-              <NoteRow key={note.id} note={note} />
+              <NoteRow key={note.id} note={note} studyspaceId={id} />
             ))}
           </ul>
         </DetailSection>

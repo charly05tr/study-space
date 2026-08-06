@@ -226,6 +226,21 @@ class AnnotationSerializer(serializers.ModelSerializer):
         return value
 
 
+class SourceUpdateSerializer(serializers.ModelSerializer):
+    """Lo unico editable a mano de una fuente: como se llama.
+
+    El archivo no. Reemplazarlo dejaria el HTML ya convertido, las anotaciones
+    y sus anclas describiendo un documento que dejo de existir; para leer otra
+    cosa se sube otra fuente. El titulo, en cambio, casi siempre nace del nombre
+    del archivo — "Graciarena-LAINDUSTRIALIZACINCOMO-1983.pdf" — y ese es
+    justamente el que hay que poder arreglar.
+    """
+
+    class Meta:
+        model = Source
+        fields = ['title']
+
+
 class SourceProgressUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer para el autoguardado de progreso (PATCH /sources/<id>/progress/).

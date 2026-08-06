@@ -2,6 +2,8 @@ export { cn } from './cn';
 
 export { Button } from './Button';
 export type { ButtonVariant, ButtonSize } from './Button';
+export { ConfirmButton } from './ConfirmButton';
+export { ActionMenu } from './ActionMenu';
 
 export { Input, fieldClasses, labelClasses } from './Input';
 export { Textarea } from './Textarea';

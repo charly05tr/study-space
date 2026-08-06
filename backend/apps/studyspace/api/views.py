@@ -307,13 +307,38 @@ class SourceViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
+            return SourceUpdateSerializer
+        elif self.action == 'progress':
             return SourceProgressUpdateSerializer
         elif self.action == 'create':
             return SourceCreateSerializer
         elif self.action == 'retrieve':
             return SourceSerializer
         return SourceMinimalSerializer
-    
+
+    @action(detail=True, methods=['patch'], url_path='progress')
+    def progress(self, request, pk=None):
+        """El autoguardado de la posicion de lectura.
+
+        Ruta propia y no el PATCH del recurso, que es lo que el nombre de
+        SourceProgressUpdateSerializer viene diciendo desde siempre. Son dos
+        escrituras de naturaleza distinta: esta la manda el lector solo, muchas
+        veces por minuto mientras se scrollea, y renombrar es una decision que
+        alguien toma una vez. Compartir endpoint obligaba a elegir cual de las
+        dos podia escribir, y el progreso habia ganado — por eso hasta ahora el
+        titulo de una fuente no se podia corregir desde ningun lado.
+        """
+        source = self.get_object()
+
+        # partial siempre: el lector manda la posicion, el ancla, o las dos,
+        # segun el medio. Un documento se retoma por ancla y un video por segundo.
+        serializer = self.get_serializer(source, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
     @action(detail=True, methods=['post'], url_path='convert')
     def convert_source(self, request, pk=None):
         """Convierte y responde solo el estado.

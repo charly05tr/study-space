@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { graphQueryKey } from '../../graph/hooks/useGraphLayout';
 import { studyspaceQueryKey } from '../../studyspaces/hooks/useStudyspace';
 import { notesApi } from '../api/notes.api';
 import { noteQueryKey } from './useNote';
@@ -39,6 +40,24 @@ export const useRenameNote = (noteId: number, studyspaceId: number) => {
       // The title also appears in the studyspace's note list and in the
       // sidebar, and both read from this one payload.
       queryClient.invalidateQueries({ queryKey: studyspaceQueryKey(studyspaceId) });
+    },
+  });
+};
+
+export const useDeleteNote = (studyspaceId: number) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (noteId: number) => notesApi.remove(noteId),
+    onSuccess: (_result, noteId) => {
+      queryClient.invalidateQueries({ queryKey: studyspaceQueryKey(studyspaceId) });
+      // The blocks cascade, and so do the relations attached to them: the map
+      // loses whole nodes, not just a label. It is pinned with staleTime
+      // Infinity, so nothing would refetch it on its own.
+      queryClient.invalidateQueries({ queryKey: graphQueryKey(studyspaceId) });
+      // Removed and not invalidated: the document is gone, and refetching it
+      // would only be a 404 behind the editor's own cache.
+      queryClient.removeQueries({ queryKey: noteQueryKey(noteId) });
     },
   });
 };

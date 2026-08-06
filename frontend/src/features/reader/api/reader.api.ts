@@ -34,7 +34,12 @@ export const readerApi = {
     };
   },
 
+  /**
+   * Its own route, not the source's PATCH: that one now writes the title, and
+   * the two must not share a door. This fires many times a minute while you
+   * scroll; a rename happens once and on purpose.
+   */
   saveProgress: async (sourceId: number, progress: ProgressPayload): Promise<void> => {
-    await axios.patch(`${BASE_URL}/${sourceId}/`, progress);
+    await axios.patch(`${BASE_URL}/${sourceId}/progress/`, progress);
   },
 };

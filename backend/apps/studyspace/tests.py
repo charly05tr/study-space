@@ -1,8 +1,12 @@
 import re
+import shutil
+import tempfile
 from datetime import timedelta
+from uuid import uuid4
 
 import fitz
-from django.test import SimpleTestCase, TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
@@ -842,3 +846,197 @@ class StudyspaceUpdateApiTests(APITestCase):
         )
         self.client.force_authenticate(intruder)
         self.assertEqual(self._patch({'title': 'mio ahora'}).status_code, 404)
+
+
+# Los uploads no van a media/: el FileField escribe de verdad al guardar la fila.
+_MEDIA_ROOT = tempfile.mkdtemp()
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_ROOT)
+class SourceApiTests(APITestCase):
+    URL = '/api/sources/'
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(_MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        from apps.studyspace.models import Source, Studyspace
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+        self.source = Source.objects.create(
+            # El titulo por defecto sale del nombre del archivo, y esta clase de
+            # nombre es exactamente lo que hay que poder arreglar.
+            title="Graciarena-LAINDUSTRIALIZACINCOMO-1983.pdf",
+            source_type='pdf',
+            file=SimpleUploadedFile("apunte.pdf", b"%PDF-1.4", content_type="application/pdf"),
+            study_space=self.studyspace,
+        )
+        self.client.force_authenticate(self.user)
+
+    def _detail(self):
+        return f"{self.URL}{self.source.pk}/"
+
+    def test_the_title_can_be_corrected(self):
+        response = self.client.patch(
+            self._detail(), {'title': 'Graciarena, La industrializacion (1983)'}, format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.title, 'Graciarena, La industrializacion (1983)')
+
+    def test_the_file_is_not_replaceable(self):
+        original = self.source.file.name
+
+        response = self.client.patch(
+            self._detail(),
+            {
+                'title': 'Otro nombre',
+                'file': SimpleUploadedFile("otro.pdf", b"%PDF-1.4", content_type="application/pdf"),
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Cambiarlo dejaria el HTML convertido y cada ancla de anotacion
+        # describiendo un documento que dejo de existir.
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.file.name, original)
+
+    def test_the_reading_progress_has_its_own_route(self):
+        response = self.client.patch(
+            f"{self._detail()}progress/",
+            {'last_anchor': 'b-4cda0adf76', 'last_position': 12.5},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.last_anchor, 'b-4cda0adf76')
+        self.assertEqual(self.source.last_position, 12.5)
+
+    def test_the_autosave_cannot_rename(self):
+        # Es la razon de separar las rutas: el lector escribe esto solo, muchas
+        # veces por minuto, y no tiene por que poder tocar el titulo.
+        self.client.patch(f"{self._detail()}progress/", {'title': 'pisado'}, format='json')
+
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.title, "Graciarena-LAINDUSTRIALIZACINCOMO-1983.pdf")
+
+    def test_renaming_does_not_move_the_reading_position(self):
+        self.client.patch(
+            f"{self._detail()}progress/", {'last_anchor': 'b-4cda0adf76'}, format='json'
+        )
+        self.client.patch(self._detail(), {'title': 'Otro nombre'}, format='json')
+
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.last_anchor, 'b-4cda0adf76')
+
+    def test_deleting_a_source_takes_its_annotations(self):
+        from apps.studyspace.models import Annotation
+
+        Annotation.objects.create(
+            source=self.source,
+            annotation_type='highlight',
+            content='La industrializacion periferica',
+            anchor='b-4cda0adf76',
+            page=14,
+            ranges=[{'anchor': 'b-4cda0adf76', 'start': 0, 'end': 30}],
+        )
+
+        self.assertEqual(self.client.delete(self._detail()).status_code, 204)
+        self.assertEqual(Annotation.objects.count(), 0)
+
+    def test_deleting_a_source_removes_its_file_from_disk(self):
+        import os
+
+        path = self.source.file.path
+        self.assertTrue(os.path.exists(path))
+
+        self.client.delete(self._detail())
+        # Django no borra el archivo al borrar la fila; lo hace la señal
+        # post_delete de borrar_archivos_de_source.
+        self.assertFalse(os.path.exists(path))
+
+    def test_another_account_neither_renames_nor_deletes(self):
+        from apps.users.models import User
+
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(intruder)
+
+        self.assertEqual(
+            self.client.patch(self._detail(), {'title': 'mio'}, format='json').status_code, 404
+        )
+        self.assertEqual(self.client.delete(self._detail()).status_code, 404)
+        self.assertEqual(
+            self.client.patch(
+                f"{self._detail()}progress/", {'last_position': 9}, format='json'
+            ).status_code,
+            404,
+        )
+
+
+class NoteDeletionApiTests(APITestCase):
+    URL = '/api/notes/'
+
+    def setUp(self):
+        from apps.studyspace.models import Block, BlockLink, Note, Studyspace
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+        self.note = Note.objects.create(title="Memoria virtual", studyspace=self.studyspace)
+
+        heading = Block.objects.create(
+            id=uuid4(), note=self.note, block_type='heading', text='Paginacion', position=0
+        )
+        paragraph = Block.objects.create(
+            id=uuid4(), note=self.note, block_type='paragraph', text='Marcos', position=1
+        )
+        BlockLink.objects.create(source=heading, target=paragraph)
+
+        self.client.force_authenticate(self.user)
+
+    def _detail(self):
+        return f"{self.URL}{self.note.pk}/"
+
+    def test_deleting_a_note_takes_its_blocks_and_their_relations(self):
+        from apps.studyspace.models import Block, BlockLink
+
+        self.assertEqual(self.client.delete(self._detail()).status_code, 204)
+        # Las dos cascadean en el modelo: borrar una nota se lleva su region del
+        # mapa entera, sin dejar aristas apuntando a nodos que ya no existen.
+        self.assertEqual(Block.objects.count(), 0)
+        self.assertEqual(BlockLink.objects.count(), 0)
+
+    def test_deleting_a_note_leaves_the_studyspace_standing(self):
+        from apps.studyspace.models import Studyspace
+
+        self.client.delete(self._detail())
+        self.assertTrue(Studyspace.objects.filter(pk=self.studyspace.pk).exists())
+
+    def test_another_account_cannot_delete_it(self):
+        from apps.studyspace.models import Note
+        from apps.users.models import User
+
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(intruder)
+
+        self.assertEqual(self.client.delete(self._detail()).status_code, 404)
+        self.assertTrue(Note.objects.filter(pk=self.note.pk).exists())

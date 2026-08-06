@@ -27,4 +27,13 @@ export const notesApi = {
     const response = await axios.patch(`${BASE_URL}/${noteId}/`, payload);
     return response.data;
   },
+
+  /**
+   * Takes the note's blocks with it, and with them every relation drawn from or
+   * to one of them — the map loses that whole region. Both cascade in the
+   * model, so there is nothing left half-deleted behind.
+   */
+  remove: async (noteId: number): Promise<void> => {
+    await axios.delete(`${BASE_URL}/${noteId}/`);
+  },
 };
