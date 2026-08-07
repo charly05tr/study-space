@@ -12,10 +12,12 @@ import {
   findSlot,
   insertSnippet,
   selectedMath,
+  tokenIndexAt,
   snippetPreview,
   type MathSnippet,
   type TextRange,
 } from '../mathNodes';
+import { setSlotFocus, slotFocus } from '../mathSlots';
 
 /**
  * Rendered previews, built once per snippet and kept.
@@ -62,8 +64,16 @@ const SnippetButton = ({ snippet, onInsert }: SnippetButtonProps) => (
       onInsert(snippet);
     }}
     className={cn(
-      'flex h-9 items-center justify-center rounded-xs px-1 text-ink',
-      'transition-colors duration-150 hover:bg-primary-50',
+      // A FLOOR and not a fixed height. An integral with both limits, or a
+      // fraction, draws taller than a row of relations does — pinned to 2.75rem
+      // those previews overflow their cell and collide with the heading of the
+      // next group, which is what made the palette look like it was printed
+      // twice. Auto rows let each group be as tall as its tallest symbol.
+      'flex min-h-11 items-center justify-center rounded-xs px-1 py-1 text-ink',
+      // A hairline that only appears under the pointer: fifty framed cells read
+      // as a spreadsheet, and the symbols are what the eye is meant to scan.
+      'border border-transparent transition-colors duration-150',
+      'hover:border-primary-200 hover:bg-primary-50',
     )}
   >
     {/*
@@ -104,10 +114,17 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
     editor,
     selector: ({ editor: instance }) => {
       const math = selectedMath(instance.state);
+      const focus = slotFocus(instance.state);
+
       return {
         type: math?.type ?? null,
         pos: math?.pos ?? -1,
         latex: math?.latex ?? '',
+        // Where the note says it is being typed into, so this panel can keep out
+        // of the way and still aim the palette at the right place.
+        inNote: focus?.inNote ?? false,
+        start: focus?.start ?? -1,
+        end: focus?.end ?? -1,
       };
     },
   });
@@ -125,14 +142,60 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
    */
   const pending = useRef<TextRange | null>(null);
 
+  /**
+   * Moves the caret here, and tells the note where it went.
+   *
+   * The second half is what keeps the two surfaces from being two editors: the
+   * hole this lands on is the one the note draws lit, and the one the palette
+   * inserts into. Reading the position out of `editor.state` rather than closing
+   * over it is what keeps this callback stable — it is a dependency of the focus
+   * handoff below, which the menu plugin re-applies through a transaction every
+   * time its identity changes.
+   */
+  const select = useCallback(
+    (input: HTMLTextAreaElement, range: TextRange) => {
+      input.setSelectionRange(range.start, range.end);
+
+      const math = selectedMath(editor.state);
+      if (!math) return;
+
+      setSlotFocus(editor, {
+        pos: math.pos,
+        index: tokenIndexAt(math.latex, range.start),
+        start: range.start,
+        end: range.end,
+        // Preserved, never asserted: a snippet dropped into a box the writer is
+        // typing in must not yank the keyboard back out of the note.
+        inNote: slotFocus(editor.state)?.inNote ?? false,
+      });
+    },
+    [editor],
+  );
+
   useEffect(() => {
     const range = pending.current;
     if (!range || !inputRef.current) return;
 
     pending.current = null;
-    inputRef.current.focus();
-    inputRef.current.setSelectionRange(range.start, range.end);
+    // Focus only when the keyboard was already here. While a box in the note has
+    // it, this input is a display of the same string and must stay one.
+    if (!state.inNote) inputRef.current.focus();
+    select(inputRef.current, range);
   });
+
+  /**
+   * The note is being typed into: keep this input's selection on the same text.
+   *
+   * The palette works by replacing whatever is selected here, so without this
+   * the first snippet clicked after filling in a box would land at whatever
+   * offset the caret was last left at.
+   */
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input || !state.inNote || state.start < 0) return;
+
+    input.setSelectionRange(state.start, state.end);
+  }, [state.inNote, state.start, state.end]);
 
   /**
    * Hands the keyboard to the source, with everything selected.
@@ -174,10 +237,15 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
       // nothing at all — silently.
       if (!input?.isConnected) return;
 
+      // Unless the panel was opened BY a click on a box in the note, in which
+      // case the keyboard belongs there and this would take it away one frame
+      // after the writer put it where they wanted it.
+      if (slotFocus(editor.state)?.inNote) return;
+
       input.focus();
-      input.setSelectionRange(0, input.value.length);
+      select(input, { start: 0, end: input.value.length });
     });
-  }, []);
+  }, [editor, select]);
 
   useEffect(
     () => () => {
@@ -253,6 +321,33 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
     commit(next.latex);
   };
 
+  /**
+   * The caret moved in here, so the note's box is no longer the one being typed
+   * in — and the hole under this caret is the one it should draw lit.
+   *
+   * Guarded on the input actually having focus, because `setSelectionRange`
+   * fires this event too: the effect above sets the selection from the note on
+   * every keystroke made there, and reacting to that would hand the keyboard
+   * back to a panel nobody is typing in.
+   */
+  const trackCaret = (input: HTMLTextAreaElement) => {
+    if (document.activeElement !== input || state.pos === -1) return;
+
+    const index = tokenIndexAt(state.latex, input.selectionStart);
+    const focus = slotFocus(editor.state);
+    if (focus && !focus.inNote && focus.index === index && focus.start === input.selectionStart) {
+      return;
+    }
+
+    setSlotFocus(editor, {
+      pos: state.pos,
+      index,
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      inNote: false,
+    });
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     const input = event.currentTarget;
 
@@ -265,7 +360,7 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
       // Set straight on the element rather than through `pending`: nothing here
       // changes the document, so there is no render coming to apply it in.
       event.preventDefault();
-      input.setSelectionRange(slot.start, slot.end);
+      select(input, slot);
       return;
     }
 
@@ -319,7 +414,21 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
        * caret can be put in it.
        */
       updateDelay={0}
-      className="w-[21rem] rounded-xs border border-rule bg-page p-2 shadow-sm"
+      /*
+        Wide enough for the palette to draw at a size worth clicking, and capped
+        against the viewport rather than at a fixed width: this panel is anchored
+        to a node that can sit anywhere on the line, so on a narrow screen a
+        rigid 34rem would hang off the edge with its buttons on the outside.
+      */
+      /*
+        `z-20` because the note's save indicator is a `sticky top-0 z-10` strip
+        (BlockEditor.tsx), and this panel is a positioned element with no z-index
+        of its own — so the SAVED badge won the paint order and sat ON TOP of the
+        palette. Anything that floats over the prose has to clear that strip.
+      */
+      className={cn(
+        'z-20 w-[min(34rem,calc(100vw-2rem))] rounded-xs border border-rule bg-page p-3 shadow-sm',
+      )}
     >
       <label className="sr-only" htmlFor="math-source">
         LaTeX source
@@ -327,22 +436,33 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
       <textarea
         id="math-source"
         ref={inputRef}
-        rows={2}
+        rows={3}
         spellCheck={false}
         value={state.latex}
         onChange={(event) => commit(event.target.value)}
+        // Both, because they answer different questions: `focus` says the
+        // keyboard has come back from the note, `select` says where it went.
+        onFocus={(event) => trackCaret(event.currentTarget)}
+        onSelect={(event) => trackCaret(event.currentTarget)}
         onKeyDown={onKeyDown}
         placeholder="\frac{a}{b}"
         className={cn(
-          'w-full resize-none rounded-xs border border-rule bg-primary-50/40 px-2 py-1.5',
-          'font-mono text-xs leading-relaxed text-ink placeholder:text-muted/70',
+          'w-full resize-none rounded-xs border border-rule bg-primary-50/40 px-2.5 py-2',
+          'font-mono text-sm leading-relaxed text-ink placeholder:text-muted/70',
           'focus:border-primary focus:outline-none',
         )}
       />
 
-      <div className="mt-2 max-h-52 overflow-y-auto pr-0.5">
+      {/*
+        The palette gives way, and it is the only part that can: the preview and
+        the source line are what the panel IS, so on a short viewport the height
+        has to come out of the scroller instead of pushing the whole thing off
+        the screen — which is what a fixed max-height does on a laptop with the
+        formula halfway down the note.
+      */}
+      <div className="mt-2 max-h-[min(16rem,32vh)] overflow-y-auto pr-1">
         {MATH_GROUPS.map((group) => (
-          <section key={group.title} className="mb-1.5 last:mb-0">
+          <section key={group.title} className="mb-2 last:mb-0">
             <h3 className="px-0.5 font-heading text-xs tracking-wide text-muted uppercase">
               {group.title}
             </h3>
@@ -352,7 +472,10 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
               — and a flowing grid would reshuffle every group into a different
               rhythm, so nothing would ever be in the place you last saw it.
             */}
-            <div className="grid grid-cols-6 gap-0.5">
+            {/* `items-stretch` on auto rows: every cell in a row is as tall as
+                the tallest preview in it, so the hover target is a rectangle
+                rather than a shape that changes with the symbol. */}
+            <div className="grid grid-cols-6 items-stretch gap-1">
               {group.snippets.map((snippet) => (
                 <SnippetButton key={snippet.key} snippet={snippet} onInsert={insert} />
               ))}
@@ -361,10 +484,13 @@ export const MathMenu = ({ editor }: MathMenuProps) => {
         ))}
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between border-t border-rule pt-1.5">
-        {/* The two shortcuts that are not guessable, and nothing else: a legend
-            long enough to read is a legend nobody reads. */}
-        <p className="font-heading text-xs text-muted">Tab: next slot · Esc: done</p>
+      <div className="mt-2 flex items-center justify-between border-t border-rule pt-2">
+        {/* The three moves that are not guessable, and nothing else: a legend
+            long enough to read is a legend nobody reads. The first one names
+            the interaction the drawing above cannot advertise on its own. */}
+        <p className="font-heading text-xs text-muted">
+          Click a box · Tab or arrows to move · Esc: done
+        </p>
         <button
           type="button"
           onMouseDown={(event) => {

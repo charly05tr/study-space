@@ -8,14 +8,31 @@ const node = (n: number): GraphNode => ({
   note_title: 'Notes',
   block_type: 'paragraph',
   text: `block ${n}`,
+  preview: `the body of block ${n}`,
+  block_count: 1,
+  promoted: false,
   orphan: false,
 });
 
 const nodes = Array.from({ length: 12 }, (_, index) => node(index));
 
 const edges = (): GraphEdge[] => [
-  { id: 1, source: nodes[0].id, target: nodes[1].id, kind: 'relates', origin: 'inline' },
-  { id: 2, source: nodes[1].id, target: nodes[2].id, kind: 'supports', origin: 'graph' },
+  {
+    id: 1,
+    source: nodes[0].id,
+    target: nodes[1].id,
+    kind: 'relates',
+    origin: 'inline',
+    link_ids: [1],
+  },
+  {
+    id: 2,
+    source: nodes[1].id,
+    target: nodes[2].id,
+    kind: 'supports',
+    origin: 'graph',
+    link_ids: [2],
+  },
 ];
 
 const fingerprint = (positions: ReturnType<typeof computePositions>) =>
@@ -57,7 +74,14 @@ describe('assembleLayout', () => {
 
   it('drops an edge pointing at a block that is not there', () => {
     const dangling: GraphEdge[] = [
-      { id: 9, source: nodes[0].id, target: node(99).id, kind: 'relates', origin: 'graph' },
+      {
+        id: 9,
+        source: nodes[0].id,
+        target: node(99).id,
+        kind: 'relates',
+        origin: 'graph',
+        link_ids: [9],
+      },
     ];
     const layout = assembleLayout(nodes, dangling, computePositions(nodes, dangling));
 

@@ -74,6 +74,32 @@ const button = (label: string) =>
   ) ??
   null;
 
+/**
+ * A hole in the formula AS DRAWN IN THE NOTE, by index and never by DOM
+ * position.
+ *
+ * KaTeX does not lay a formula out in the order it is written: a fraction is a
+ * vertical list built bottom-up, so the denominator's span comes first in the
+ * document. Reading the boxes in tree order would pair every click with the
+ * wrong half of the source — which is the whole reason each one carries the
+ * index of the `\square` it stands for.
+ */
+const box = (index: number) =>
+  document.body.querySelector<HTMLElement>(`[data-type="block-math"] [data-slot="${index}"]`);
+
+/** The input that appears inside a clicked box. */
+const field = () => document.body.querySelector<HTMLInputElement>('.math-slot-field');
+
+/** Types into the note's box the way a person does: one native input event. */
+const type = async (text: string) => {
+  const input = field()!;
+  await act(async () => {
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await settle();
+};
+
 /** mousedown, not click: the buttons act on a caret a click would have moved. */
 const press = async (element: HTMLElement | null) => {
   await act(async () => {
@@ -178,6 +204,152 @@ describe('the formula panel', () => {
     // The document, not just the input: the preview IS the stored node, so if
     // these ever drift the user is editing something they cannot see.
     expect(editor.state.doc.firstChild?.attrs.latex).toBe('\\frac{1}{2}');
+  });
+
+  it('puts an input in the box that was clicked, in the note', async () => {
+    /**
+     * The interaction the source line cannot offer: `\square` is a word someone
+     * has to learn to read, and a formula with two of them is two identical
+     * strings among the backslashes. The formula on the page already shows the
+     * writer where the holes are — this makes them the place to type.
+     */
+    await addEquation();
+    await press(button('Fraction'));
+
+    expect(document.body.querySelectorAll('[data-type="block-math"] [data-slot]')).toHaveLength(2);
+    expect(field()).toBeNull();
+
+    await press(box(1));
+
+    expect(field()).not.toBeNull();
+    expect(document.activeElement).toBe(field());
+  });
+
+  it('writes what is typed in the box into the formula, keystroke by keystroke', async () => {
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(1));
+    await type('2');
+
+    // The document, not the input: the note autosaves from the node, and a box
+    // holding text the document has not got is a box that can lose it.
+    expect(editor.state.doc.firstChild?.attrs.latex).toBe(`\\frac{${MATH_SLOT}}{2}`);
+  });
+
+  it('gives an emptied box its hole back', async () => {
+    // The formula stays valid LaTeX between keystrokes, and someone deleting
+    // what they wrote is not asking to lose the slot.
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(0));
+    await type('x');
+    await type('');
+
+    expect(editor.state.doc.firstChild?.attrs.latex).toBe(
+      `\\frac{${MATH_SLOT}}{${MATH_SLOT}}`,
+    );
+  });
+
+  it('lights the hole being worked on', async () => {
+    await addEquation();
+    await press(button('Fraction'));
+
+    // The insertion left the first hole selected in the panel, and the note
+    // draws that one lit — the two surfaces are views of one string.
+    expect(box(0)?.hasAttribute('data-slot-active')).toBe(true);
+    expect(box(1)?.hasAttribute('data-slot-active')).toBe(false);
+
+    await press(box(1));
+
+    expect(box(0)?.hasAttribute('data-slot-active')).toBe(false);
+    expect(box(1)?.hasAttribute('data-slot-active')).toBe(true);
+  });
+
+  it('lands a palette snippet in the box being typed in', async () => {
+    // The panel keeps its selection on whatever the note's box covers, so the
+    // palette stays usable without the keyboard leaving the formula.
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(1));
+    await press(button('Square root'));
+
+    expect(editor.state.doc.firstChild?.attrs.latex).toBe(
+      `\\frac{${MATH_SLOT}}{\\sqrt{${MATH_SLOT}}}`,
+    );
+  });
+
+  it('opens a written token holding what is already there', async () => {
+    // The difference between filling a formula in and EDITING one: a 2 clicked
+    // on comes back as a 2 that can be corrected, not as a blank to retype.
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(0));
+    await type('12');
+    await press(box(1));
+    await press(box(0));
+
+    expect(field()?.value).toBe('12');
+    // Selected, because clicking a token says it is the thing being changed.
+    expect(field()?.selectionStart).toBe(0);
+    expect(field()?.selectionEnd).toBe(2);
+  });
+
+  it('rewrites a number that was already written', async () => {
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(0));
+    await type('12');
+    await press(box(1));
+    await press(box(0));
+    await type('7');
+
+    expect(editor.state.doc.firstChild?.attrs.latex).toBe(`\\frac{7}{${MATH_SLOT}}`);
+  });
+
+  it('marks holes apart from written tokens, so only holes look fillable', async () => {
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(0));
+    await type('9');
+    await press(box(1));
+
+    // Every part of the formula is a target; only the empty one advertises it.
+    expect(box(0)?.hasAttribute('data-hole')).toBe(false);
+    expect(box(1)?.hasAttribute('data-hole')).toBe(true);
+  });
+
+  it('walks out of the formula when an arrow runs out of boxes', async () => {
+    /**
+     * The edge case, which in jsdom is the ONLY case: there is no layout here,
+     * so every box reports a zero rect and `nextToken` finds nothing in any
+     * direction. The geometry itself is tested against real coordinates in
+     * mathNodes.test.ts; what this covers is that a formula is never a keyboard
+     * trap — an arrow with nowhere to go inside means what it means in prose.
+     */
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(0));
+
+    const input = field()!;
+    await act(async () => {
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+
+    expect(field()).toBeNull();
+    expect(source()).toBeNull();
+    expect(editor.state.selection.empty).toBe(true);
+  });
+
+  it('keeps the source line in step with the box', async () => {
+    await addEquation();
+    await press(button('Fraction'));
+    await press(box(0));
+    await type('a');
+
+    expect(source()?.value).toBe(`\\frac{a}{${MATH_SLOT}}`);
   });
 
   it('closes and takes the empty formula with it', async () => {

@@ -167,7 +167,8 @@ export const TableMenu = ({ editor }: TableMenuProps) => {
         // Whole cells selected is a structural one, and belongs here.
         return from === to || instance.state.selection instanceof CellSelection;
       }}
-      className="flex items-center gap-0.5 rounded-xs border border-rule bg-page px-1 shadow-sm"
+      // z-20: over the save indicator's sticky strip. See MathMenu for the why.
+      className="z-20 flex items-center gap-0.5 rounded-xs border border-rule bg-page px-1 shadow-sm"
     >
       <TableButton
         label="Add row above"

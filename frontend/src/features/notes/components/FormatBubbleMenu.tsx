@@ -87,7 +87,8 @@ export const FormatBubbleMenu = ({ editor }: FormatBubbleMenuProps) => {
         // of buttons that silently do nothing.
         return !instance.isActive('codeBlock');
       }}
-      className="flex items-center gap-0.5 rounded-xs border border-rule bg-page px-1 shadow-sm"
+      // z-20: over the save indicator's sticky strip. See MathMenu for the why.
+      className="z-20 flex items-center gap-0.5 rounded-xs border border-rule bg-page px-1 shadow-sm"
     >
       <MarkButton
         label="Bold"

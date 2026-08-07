@@ -1,21 +1,20 @@
 import type { ChainedCommands } from '@tiptap/core';
-import { Mathematics } from '@tiptap/extension-mathematics';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { NodeSelection, Selection, type EditorState } from '@tiptap/pm/state';
 
 /**
  * Formulas, as a study note needs them.
  *
- * Built on `@tiptap/extension-mathematics` (KaTeX) rather than a hand-rolled
- * node, and the reason is the same one behind the tables: rendering LaTeX is a
- * solved problem with a hard, boring core — spacing rules, font metrics, six
- * different kinds of delimiter growth — and none of it is what this app is for.
+ * This file is the part with no DOM in it: the placeholder slots, the snippet
+ * catalogue behind the palette, the string arithmetic that decides where the
+ * caret lands, and the commands for entering and leaving a formula. Three
+ * different surfaces share it — the boxes in the note (mathSlots.ts), the panel
+ * (MathMenu.tsx), and the `/equation` item — and none of them owns it.
  *
- * What the extension does NOT give us is the editing experience. Both nodes are
- * ATOMS holding a single `latex` string attribute; the package renders them and
- * offers insert/update/delete commands, and stops there. Everything below is
- * ours: the placeholder slots, the snippet catalogue behind the palette, and the
- * way out of a formula once it is written. See MathMenu.tsx for the surface.
+ * The nodes themselves come from `@tiptap/extension-mathematics` (KaTeX), wired
+ * up in mathSlots.ts. Both are ATOMS holding a single `latex` string attribute;
+ * the package renders them and offers insert/update/delete commands, and stops
+ * there. Everything that makes a formula editable is ours.
  *
  * Deliberately absent from ID_BEARING_BLOCKS: a formula is one opaque string,
  * not prose. The graph has nothing to link to inside it, and a node whose whole
@@ -23,36 +22,6 @@ import { NodeSelection, Selection, type EditorState } from '@tiptap/pm/state';
  */
 export const BLOCK_MATH = 'blockMath';
 export const INLINE_MATH = 'inlineMath';
-
-export const NoteMath = Mathematics.configure({
-  katexOptions: {
-    /**
-     * The single most important option here, and it is about TYPING.
-     *
-     * The preview re-renders on every keystroke, and a formula halfway through
-     * being typed is almost always invalid — `\fra`, `\frac{x}` — so throwing
-     * would blank the block on most keystrokes and only show something on the
-     * few where the string happens to parse. With this off, KaTeX renders what
-     * it understood and leaves the offending command as red text in place, so
-     * the fraction you already built stays on screen while you write the next
-     * one.
-     */
-    throwOnError: false,
-    /**
-     * A CSS variable, not a hex value: KaTeX drops this straight into an inline
-     * `color:` style, so it goes through the same token as every other error in
-     * the app — and flips with the dark theme, which a baked-in red would not.
-     */
-    errorColor: 'var(--color-danger)',
-    /**
-     * Off, because "strict" here does not mean "safer", it means WARN: the
-     * default logs a console warning for perfectly renderable input like a
-     * Unicode minus or an accented character pasted out of a PDF. Study notes
-     * are full of exactly that.
-     */
-    strict: false,
-  },
-});
 
 /**
  * The placeholder that stands in for "something goes here".
@@ -231,6 +200,35 @@ export interface TextRange {
 }
 
 /**
+ * Every hole in the formula, in the order they are written.
+ *
+ * The boundary guard is what separates a hole from a command that merely starts
+ * with one: `\squarecup` is a real LaTeX symbol, and a plain substring search
+ * would offer its first eight characters as somewhere to type — then cut the
+ * command in half the moment anything was typed there.
+ *
+ * Source order is not an implementation detail either: it is the contract
+ * between the two ways of pointing at a hole. The rendered preview labels its
+ * boxes by position in this list, so the third box drawn is the third `\square`
+ * written, and a click on one can be turned back into a range in the source.
+ */
+const SLOT_PATTERN = /\\square(?![a-zA-Z])/g;
+
+export const slotRanges = (latex: string): TextRange[] => {
+  const ranges: TextRange[] = [];
+
+  // A fresh regex per call rather than a module constant reused: `g` regexes
+  // carry `lastIndex` across calls, so a shared one would resume mid-string.
+  const pattern = new RegExp(SLOT_PATTERN.source, 'g');
+
+  for (let match = pattern.exec(latex); match !== null; match = pattern.exec(latex)) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+
+  return ranges;
+};
+
+/**
  * The next hole to fill, searching forward from `from` and wrapping once.
  *
  * Wrapping is what makes Tab a cycle rather than a dead end: someone filling in
@@ -242,10 +240,259 @@ export interface TextRange {
  * leave the input rather than to move inside it.
  */
 export const findSlot = (latex: string, from = 0): TextRange | null => {
-  const ahead = latex.indexOf(MATH_SLOT, from);
-  const at = ahead === -1 ? latex.indexOf(MATH_SLOT) : ahead;
+  const ranges = slotRanges(latex);
+  if (ranges.length === 0) return null;
 
-  return at === -1 ? null : { start: at, end: at + MATH_SLOT.length };
+  return ranges.find((range) => range.start >= from) ?? ranges[0];
+};
+
+/**
+ * The commands that stand for a thing rather than do something to one.
+ *
+ * Only these are offered as somewhere to type, and the line is drawn where
+ * KaTeX draws it: an "ord" is an ordinary atom, the same class as a letter or a
+ * digit, so wrapping one changes nothing about how the formula is set. Wrapping
+ * a `+` would — a binary operator inside a group stops being a binary operator,
+ * and the space either side of it collapses.
+ *
+ * So relations and operators are edited in the panel's source line, and the
+ * boxes in the note are the things a formula is FILLED IN with.
+ */
+const ORD_COMMANDS = new Set([
+  MATH_SLOT,
+  '\\alpha',
+  '\\beta',
+  '\\gamma',
+  '\\delta',
+  '\\theta',
+  '\\lambda',
+  '\\mu',
+  '\\pi',
+  '\\sigma',
+  '\\phi',
+  '\\omega',
+  '\\Delta',
+  '\\infty',
+  '\\emptyset',
+  '\\partial',
+]);
+
+/**
+ * Commands whose braced argument is a NAME, not maths.
+ *
+ * `\begin{pmatrix}` is the one that matters: scanned as maths, the environment
+ * name reads as seven separate letters, and tagging them would rewrite the
+ * command into `\begin{\htmlData{slot=0}{p}matrix}` — which is not an
+ * environment at all. `\text` is the same problem with a different symptom:
+ * `\square` and the `\html*` family are math-mode only, so a tag inside prose
+ * is a parse error.
+ */
+const OPAQUE_COMMANDS = new Set([
+  '\\begin',
+  '\\end',
+  '\\text',
+  '\\textbf',
+  '\\textit',
+  '\\operatorname',
+  '\\mathrm',
+  '\\mathbf',
+  '\\mathbb',
+  '\\mathcal',
+]);
+
+const LETTER = /[a-zA-Z]/;
+const DIGIT = /[0-9]/;
+
+/**
+ * Every part of the formula a person can point at, in source order.
+ *
+ * A SCANNER and deliberately not a parser: it walks the string looking for the
+ * leaves — a number, a letter, a symbol command, a hole — and steps over
+ * everything that is structure. It does not need to know what `\frac` means to
+ * find the `2` and the `3` inside it, which is the whole trick. What it does
+ * need is to keep out of the two places where text is not maths (see
+ * OPAQUE_COMMANDS), and that is the only special-casing here.
+ *
+ * A run of digits is ONE token, because `3.14` is a number rather than four
+ * things — clicking it should offer the number, not the `1`.
+ */
+export const tokenRanges = (latex: string): TextRange[] => {
+  const ranges: TextRange[] = [];
+  let at = 0;
+
+  while (at < latex.length) {
+    const char = latex[at];
+
+    if (char === '\\') {
+      // `\\` is a row break in a matrix, not the start of a command.
+      if (latex[at + 1] === '\\') {
+        at += 2;
+        continue;
+      }
+
+      let end = at + 1;
+      while (end < latex.length && LETTER.test(latex[end])) end += 1;
+      const command = latex.slice(at, end);
+
+      if (OPAQUE_COMMANDS.has(command)) {
+        // Past the command AND its argument, braces and all.
+        at = end;
+        if (latex[at] === '{') {
+          let depth = 0;
+          while (at < latex.length) {
+            if (latex[at] === '{') depth += 1;
+            else if (latex[at] === '}') {
+              depth -= 1;
+              if (depth === 0) {
+                at += 1;
+                break;
+              }
+            }
+            at += 1;
+          }
+        }
+        continue;
+      }
+
+      if (ORD_COMMANDS.has(command)) ranges.push({ start: at, end });
+      at = end;
+      continue;
+    }
+
+    if (DIGIT.test(char)) {
+      let end = at + 1;
+      while (end < latex.length && (DIGIT.test(latex[end]) || latex[end] === '.')) end += 1;
+      // A trailing dot is punctuation ending a sentence, not part of the number.
+      while (end > at + 1 && latex[end - 1] === '.') end -= 1;
+      ranges.push({ start: at, end });
+      at = end;
+      continue;
+    }
+
+    if (LETTER.test(char)) {
+      // One letter at a time, because `xy` is x times y in maths — two things a
+      // reader would point at separately, not the word "xy".
+      ranges.push({ start: at, end: at + 1 });
+      at += 1;
+      continue;
+    }
+
+    at += 1;
+  }
+
+  return ranges;
+};
+
+/**
+ * Which token the caret is in, or -1.
+ *
+ * Inside wins over adjacent: a caret at offset 2 of `12\square` is against the
+ * end of the number AND at the start of the hole, and the hole is the answer —
+ * otherwise Tab would land on the token before the one it just found.
+ */
+export const tokenIndexAt = (latex: string, caret: number): number => {
+  const ranges = tokenRanges(latex);
+  const inside = ranges.findIndex((range) => caret >= range.start && caret < range.end);
+
+  return inside === -1 ? ranges.findIndex((range) => range.end === caret) : inside;
+};
+
+/**
+ * The same formula, with every token tagged so the rendering can be clicked.
+ *
+ * `\htmlData` and not a post-pass over the rendered DOM, which is the obvious
+ * alternative and the wrong one: KaTeX emits no source map, so matching spans
+ * to tokens afterwards means finding every span that happens to draw a `2` and
+ * trusting that document order matches source order — which nothing guarantees
+ * for scripts, fractions or matrices. Tagging before the render makes the
+ * mapping KaTeX's job instead of a guess.
+ *
+ * The tag is the token's INDEX, not its offset: offsets move on every keystroke,
+ * and the formula is re-rendered from the source anyway.
+ *
+ * The braces around the wrapper are not decoration. `x^\htmlData{a=b}{2}` is a
+ * PARSE ERROR — a superscript takes the next group, and a two-argument command
+ * is not one — so an exponent would blank the formula the moment it was tagged.
+ */
+export const decorateTokens = (latex: string): string => {
+  const ranges = tokenRanges(latex);
+  if (ranges.length === 0) return latex;
+
+  let out = '';
+  let cursor = 0;
+
+  ranges.forEach((range, index) => {
+    const body = latex.slice(range.start, range.end);
+    // Holes are marked so they can be drawn as holes: a formula where every
+    // number wears a tinted box is a formula nobody can read.
+    const hole = body === MATH_SLOT ? ',hole=1' : '';
+
+    out += latex.slice(cursor, range.start);
+    out += `{\\htmlData{slot=${index}${hole}}{${body}}}`;
+    cursor = range.end;
+  });
+
+  return out + latex.slice(cursor);
+};
+
+export type Direction = 'left' | 'right' | 'up' | 'down';
+
+/** A tagged token as it was actually laid out, in viewport coordinates. */
+export interface TokenBox {
+  index: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * The token an arrow key should move to, or null at the edge of the formula.
+ *
+ * Geometry rather than source order, and that is the entire point: a formula is
+ * TWO-DIMENSIONAL. `\frac{a}{b}` writes the numerator first, so "next in the
+ * source" from `a` is `b` — but on the page `b` is DOWN, and whatever follows
+ * the fraction is what lies to the right. Source order gets that backwards, and
+ * exponents, limits and matrices are all the same shape of problem. KaTeX has
+ * already solved the layout; this reads the answer off it.
+ *
+ * The cross-axis weight is what makes the movement feel deliberate: a candidate
+ * three times as far off the line of travel as it is along it loses to one
+ * sitting straight ahead, so Down from a numerator finds its own denominator
+ * rather than something nearer but sideways.
+ */
+const CROSS_AXIS_WEIGHT = 3;
+
+export const nextToken = (boxes: TokenBox[], from: number, direction: Direction): number | null => {
+  const current = boxes.find((box) => box.index === from);
+  if (!current) return null;
+
+  const hereX = (current.left + current.right) / 2;
+  const hereY = (current.top + current.bottom) / 2;
+  const horizontal = direction === 'left' || direction === 'right';
+
+  let best: number | null = null;
+  let bestScore = Infinity;
+
+  boxes.forEach((box) => {
+    if (box.index === from) return;
+
+    const dx = (box.left + box.right) / 2 - hereX;
+    const dy = (box.top + box.bottom) / 2 - hereY;
+
+    const along = direction === 'right' ? dx : direction === 'left' ? -dx : direction === 'down' ? dy : -dy;
+    // Strictly ahead. A box level with this one is not in that direction, which
+    // is what keeps Right out of the denominator sitting under the caret.
+    if (along <= 0) return;
+
+    const score = along + Math.abs(horizontal ? dy : dx) * CROSS_AXIS_WEIGHT;
+    if (score < bestScore) {
+      bestScore = score;
+      best = box.index;
+    }
+  });
+
+  return best;
 };
 
 export interface SnippetInsertion {
