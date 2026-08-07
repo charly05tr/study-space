@@ -96,6 +96,24 @@ class SMTPAdapter(IEmailService):
             html_message=html_message,
         )
 
+    def send_session_reminder(self, user, context):
+        subject = f"Tu sesión de estudio: {context['goal']}"
+
+        html_message = render_to_string('emails/session_reminder.html', {
+            'user': user,
+            **context,
+        })
+
+        plain_message = strip_tags(html_message)
+
+        send_mail(
+            subject,
+            plain_message,
+            'Studyspace App <noreply@cetorres.dev>',
+            [user.email],
+            html_message=html_message,
+        )
+
     def send(self, user, message, subject):
         html_message = render_to_string('emails/generic.html', {
             'user': user,

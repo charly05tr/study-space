@@ -17,6 +17,7 @@ import { CreateStudyspacePage } from '../features/studyspaces/pages/CreateStudys
 import { StudyspaceDetailPage } from '../features/studyspaces/pages/StudyspaceDetailPage';
 import { ReaderPage } from '../features/reader/pages/ReaderPage';
 import { SessionsPage } from '../features/sessions/pages/SessionsPage';
+import { PlanPage } from '../features/planning/pages/PlanPage';
 import { ProfilePage } from '../features/profile/pages/ProfilePage';
 import { NotePage } from '../features/notes/pages/NotePage';
 import { LazyGraphPage } from './LazyGraphPage';
@@ -65,6 +66,10 @@ export const router = createBrowserRouter([
           // Nested for the same reason as the map: the sidebar keeps showing
           // the studyspace this history belongs to.
           { path: '/studyspace/:studyspaceId/sessions', element: <SessionsPage /> },
+          // El calendario quiere el ancho completo de la pagina, asi que va en
+          // su propia ruta y no como seccion del detalle. Anidado como el mapa
+          // para que el sidebar siga mostrando este studyspace.
+          { path: '/studyspace/:studyspaceId/plan', element: <PlanPage /> },
           // El editor es escritura, no lectura: va en AppLayout como el hub, no
           // en ReaderLayout.
           { path: '/note/:noteId', element: <NotePage /> },

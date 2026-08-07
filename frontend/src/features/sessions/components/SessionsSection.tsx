@@ -41,6 +41,14 @@ export const SessionsSection = ({ studyspaceId }: SessionsSectionProps) => {
       emptyMessage="No sessions yet. Start one to work in timed stretches."
       action={
         <span className="flex items-center gap-1">
+          {/* Siempre visible, al reves que "View all": planificar es lo que se
+              hace cuando todavia no hay nada, no cuando ya hay historial. */}
+          <Link
+            to={`/studyspace/${studyspaceId}/plan`}
+            className="rounded-xs border border-transparent px-3 py-1.5 font-heading text-xs uppercase tracking-[0.14em] text-muted transition-colors duration-150 hover:border-rule hover:text-ink"
+          >
+            Plan
+          </Link>
           {total > 0 && (
             <Link
               to={`/studyspace/${studyspaceId}/sessions`}

@@ -369,6 +369,437 @@ class StudySessionApiTests(APITestCase):
         self.assertEqual(self.client.get(self.URL).status_code, 401)
 
 
+class PlannedSessionServiceTests(TestCase):
+    """La planificacion: reservar el bloque, moverlo, y convertirlo en sesion."""
+
+    def setUp(self):
+        from django.utils import timezone as dj_timezone
+
+        from apps.studyspace.models import Studyspace
+        from apps.studyspace.services.planned_session_service import PlannedSessionService
+        from apps.users.models import User
+
+        self.now = dj_timezone.now()
+        self.service = PlannedSessionService()
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+
+    def _plan(self, offset_hours=24, duration=timedelta(hours=2), **overrides):
+        payload = {
+            'studyspace': self.studyspace,
+            'goal': "Leer el capitulo 2",
+            'starts_at': self.now + timedelta(hours=offset_hours),
+            'ends_at': self.now + timedelta(hours=offset_hours) + duration,
+            'timezone_name': 'America/Managua',
+            'reminder_offset_minutes': 60,
+        }
+        payload.update(overrides)
+        return self.service.create(**payload)
+
+    def test_the_reminder_instant_is_derived_from_the_block(self):
+        # `reminder_at` no lo manda el cliente: se calcula, y por eso hay uno solo.
+        plan = self._plan(offset_hours=24, reminder_offset_minutes=90)
+        self.assertEqual(plan.reminder_at, plan.starts_at - timedelta(minutes=90))
+
+    def test_no_reminder_leaves_nothing_to_sweep(self):
+        plan = self._plan(reminder_offset_minutes=None)
+        self.assertIsNone(plan.reminder_at)
+        self.assertNotIn(plan, list(self.service.due_reminders(self.now + timedelta(days=2))))
+
+    def test_the_past_is_not_plannable(self):
+        with self.assertRaises(ValidationError):
+            self._plan(offset_hours=-2)
+
+    def test_a_block_must_end_after_it_starts(self):
+        with self.assertRaises(ValidationError):
+            self._plan(duration=timedelta(hours=-1))
+
+    def test_absurd_durations_are_refused(self):
+        with self.assertRaises(ValidationError):
+            self._plan(duration=timedelta(minutes=1))
+        with self.assertRaises(ValidationError):
+            self._plan(duration=timedelta(hours=20))
+
+    def test_an_unknown_timezone_is_refused(self):
+        with self.assertRaises(ValidationError):
+            self._plan(timezone_name='Mars/Olympus')
+
+    def test_rescheduling_reopens_the_reminder(self):
+        # Si ya se aviso y la sesion se mueve, el aviso viejo dejo de ser cierto.
+        plan = self._plan()
+        self.service.claim_reminder(plan)
+        plan.refresh_from_db()
+        self.assertIsNotNone(plan.reminder_sent_at)
+
+        moved = self.service.reschedule(plan, starts_at=self.now + timedelta(days=3),
+                                        ends_at=self.now + timedelta(days=3, hours=2))
+        self.assertIsNone(moved.reminder_sent_at)
+        self.assertEqual(moved.reminder_at, moved.starts_at - timedelta(minutes=60))
+
+    def test_editing_only_the_goal_does_not_require_a_future_block(self):
+        from apps.studyspace.models import PlannedSession
+
+        plan = self._plan()
+        PlannedSession.objects.filter(pk=plan.pk).update(
+            starts_at=self.now - timedelta(hours=1),
+            ends_at=self.now + timedelta(hours=1),
+        )
+        plan.refresh_from_db()
+
+        edited = self.service.reschedule(plan, goal="Otro objetivo")
+        self.assertEqual(edited.goal, "Otro objetivo")
+
+    def test_cancelling_takes_it_out_of_the_sweep(self):
+        plan = self.service.cancel(self._plan())
+        self.assertIsNone(plan.reminder_at)
+        self.assertNotIn(plan, list(self.service.due_reminders(self.now + timedelta(days=2))))
+
+    def test_cancelling_twice_is_not_an_error(self):
+        plan = self._plan()
+        self.service.cancel(plan)
+        self.service.cancel(plan)
+
+    def test_starting_links_the_plan_to_a_real_session(self):
+        from apps.studyspace.models import PlannedSession
+
+        plan = self._plan()
+        session = self.service.start(plan, focus_minutes=25, rest_minutes=5)
+
+        plan.refresh_from_db()
+        self.assertEqual(plan.status, PlannedSession.Status.STARTED)
+        self.assertEqual(plan.study_session_id, session.pk)
+        self.assertEqual(session.goal, plan.goal)
+        # Una sesion ya iniciada no tiene recordatorio pendiente.
+        self.assertIsNone(plan.reminder_at)
+
+    def test_a_cancelled_plan_cannot_be_started(self):
+        plan = self.service.cancel(self._plan())
+        with self.assertRaises(ValidationError):
+            self.service.start(plan, focus_minutes=25, rest_minutes=5)
+
+    def test_a_started_plan_cannot_be_rescheduled(self):
+        plan = self._plan()
+        self.service.start(plan, focus_minutes=25, rest_minutes=5)
+        with self.assertRaises(ValidationError):
+            self.service.reschedule(plan, goal="tarde")
+
+    def test_the_claim_is_won_exactly_once(self):
+        # Dos barridos solapados no pueden mandar el mismo correo dos veces.
+        plan = self._plan()
+        self.assertTrue(self.service.claim_reminder(plan))
+        self.assertFalse(self.service.claim_reminder(plan))
+
+    def test_a_released_claim_returns_to_the_queue(self):
+        plan = self._plan()
+        self.service.claim_reminder(plan)
+        self.service.release_reminder(plan)
+        self.assertTrue(self.service.claim_reminder(plan))
+
+    def test_a_reminder_is_useless_once_the_session_started(self):
+        plan = self._plan()
+        self.assertTrue(self.service.is_reminder_still_useful(plan, self.now))
+        self.assertFalse(
+            self.service.is_reminder_still_useful(plan, plan.starts_at + timedelta(hours=1))
+        )
+
+    def test_the_sweep_only_picks_what_is_due_and_unsent(self):
+        due = self._plan(offset_hours=1)          # recordatorio ya vencido
+        future = self._plan(offset_hours=48)      # todavia falta
+        sent = self._plan(offset_hours=1)
+        self.service.claim_reminder(sent)
+
+        picked = set(self.service.due_reminders(self.now))
+        self.assertIn(due, picked)
+        self.assertNotIn(future, picked)
+        self.assertNotIn(sent, picked)
+
+    def test_the_email_reads_the_hour_it_was_planned_in(self):
+        # El instante es absoluto; la zona guardada existe para el correo.
+        plan = self._plan(timezone_name='America/Managua')
+        self.assertEqual(str(self.service.local_starts_at(plan).tzinfo), 'America/Managua')
+
+    def test_past_blocks_are_closed_as_missed(self):
+        from apps.studyspace.models import PlannedSession
+
+        plan = self._plan()
+        PlannedSession.objects.filter(pk=plan.pk).update(
+            starts_at=self.now - timedelta(hours=4),
+            ends_at=self.now - timedelta(hours=2),
+        )
+
+        self.assertEqual(self.service.mark_missed(self.now), 1)
+        plan.refresh_from_db()
+        self.assertEqual(plan.status, PlannedSession.Status.MISSED)
+
+    def test_other_peoples_plans_are_not_listed(self):
+        from apps.users.models import User
+
+        self._plan()
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.assertEqual(self.service.get_user_planned_sessions(intruder).count(), 0)
+
+
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    # Sin esto, `.delay()` del barrido encola contra el Redis real y el worker
+    # de verdad termina buscando filas de la base de test.
+    CELERY_TASK_ALWAYS_EAGER=True,
+)
+class SessionReminderTaskTests(TestCase):
+    """El camino completo del recordatorio: barrido, envio, y plantilla.
+
+    Las tareas se llaman directo y no con `.delay()`: lo que se prueba es la
+    logica de la tarea, no que Celery sepa encolar.
+    """
+
+    def setUp(self):
+        from django.utils import timezone as dj_timezone
+
+        from apps.studyspace.models import Studyspace
+        from apps.studyspace.services.planned_session_service import PlannedSessionService
+        from apps.users.models import User
+
+        self.now = dj_timezone.now()
+        self.service = PlannedSessionService()
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x",
+            first_name="Carlos",
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+
+    def _plan(self, offset_hours=1, **overrides):
+        payload = {
+            'studyspace': self.studyspace,
+            'goal': "Leer el capitulo 2",
+            'starts_at': self.now + timedelta(hours=offset_hours),
+            'ends_at': self.now + timedelta(hours=offset_hours + 2),
+            'timezone_name': 'America/Managua',
+            'reminder_offset_minutes': 60,
+        }
+        payload.update(overrides)
+        return self.service.create(**payload)
+
+    def test_the_reminder_renders_and_reaches_the_owner(self):
+        from django.core import mail
+
+        from apps.studyspace.tasks import task_send_session_reminder
+
+        plan = self._plan()
+        task_send_session_reminder(plan.pk)
+
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, ['lector@example.com'])
+        self.assertIn(plan.goal, sent.subject)
+        # La plantilla vive en config/templates y solo resuelve dentro del
+        # contenedor: si este assert pasa, el DIRS absoluto esta bien.
+        self.assertIn("Sistemas operativos", sent.body)
+
+        plan.refresh_from_db()
+        self.assertIsNotNone(plan.reminder_sent_at)
+
+    def test_the_same_reminder_is_not_sent_twice(self):
+        from django.core import mail
+
+        from apps.studyspace.tasks import task_send_session_reminder
+
+        plan = self._plan()
+        task_send_session_reminder(plan.pk)
+        task_send_session_reminder(plan.pk)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_a_cancelled_plan_gets_no_email(self):
+        from django.core import mail
+
+        from apps.studyspace.tasks import task_send_session_reminder
+
+        plan = self.service.cancel(self._plan())
+        task_send_session_reminder(plan.pk)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_a_reminder_that_arrived_late_is_dropped_not_looped(self):
+        from django.core import mail
+
+        from apps.studyspace.models import PlannedSession
+        from apps.studyspace.tasks import task_send_session_reminder
+
+        # El broker estuvo caido y la sesion ya empezo: avisar ahora desinforma.
+        plan = self._plan()
+        PlannedSession.objects.filter(pk=plan.pk).update(
+            starts_at=self.now - timedelta(hours=2),
+            ends_at=self.now - timedelta(hours=1),
+            reminder_at=self.now - timedelta(hours=3),
+        )
+
+        task_send_session_reminder(plan.pk)
+
+        self.assertEqual(len(mail.outbox), 0)
+        plan.refresh_from_db()
+        # Marcado igual: sin esto el barrido lo levantaria para siempre.
+        self.assertIsNotNone(plan.reminder_sent_at)
+
+    def test_the_sweep_enqueues_only_what_is_due(self):
+        from apps.studyspace.tasks import task_sweep_session_reminders
+
+        self._plan(offset_hours=1)    # vence ahora
+        self._plan(offset_hours=48)   # todavia falta
+        self.assertEqual(task_sweep_session_reminders(), 1)
+
+    def test_a_missing_plan_does_not_crash_the_worker(self):
+        from apps.studyspace.tasks import task_send_session_reminder
+
+        task_send_session_reminder(999999)
+
+
+class PlannedSessionApiTests(APITestCase):
+    URL = '/api/planned-sessions/'
+
+    def setUp(self):
+        from django.utils import timezone as dj_timezone
+
+        from apps.studyspace.models import Studyspace
+        from apps.users.models import User
+
+        self.now = dj_timezone.now()
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Sistemas operativos", description="", user=self.user
+        )
+        self.client.force_authenticate(self.user)
+
+    def _create(self, **overrides):
+        starts = self.now + timedelta(days=1)
+        payload = {
+            'goal': 'Leer el capitulo 2',
+            'studyspace': self.studyspace.pk,
+            'starts_at': starts.isoformat(),
+            'ends_at': (starts + timedelta(hours=2)).isoformat(),
+            'timezone': 'America/Managua',
+            'reminder_offset_minutes': 60,
+        }
+        payload.update(overrides)
+        return self.client.post(self.URL, payload, format='json')
+
+    def test_planning_a_block_returns_its_duration(self):
+        response = self._create()
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body['duration_minutes'], 120)
+        self.assertEqual(body['status'], 'planned')
+        self.assertIsNone(body['study_session'])
+
+    def test_a_block_in_the_past_is_refused(self):
+        starts = self.now - timedelta(hours=3)
+        response = self._create(
+            starts_at=starts.isoformat(),
+            ends_at=(starts + timedelta(hours=1)).isoformat(),
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_the_calendar_reads_a_date_range(self):
+        self._create()
+        far = self.now + timedelta(days=60)
+        self._create(
+            starts_at=far.isoformat(), ends_at=(far + timedelta(hours=1)).isoformat()
+        )
+
+        response = self.client.get(self.URL, {
+            'studyspace': self.studyspace.pk,
+            'starts_after': self.now.isoformat(),
+            'starts_before': (self.now + timedelta(days=7)).isoformat(),
+        })
+        self.assertEqual(len(response.json()), 1)
+
+    def test_the_calendar_is_not_paginated(self):
+        # Un mes partido en dos paginas es media grilla, y el cliente no tendria
+        # como saber que le falta la otra mitad.
+        for day in range(1, 15):
+            starts = self.now + timedelta(days=day)
+            self._create(
+                starts_at=starts.isoformat(),
+                ends_at=(starts + timedelta(hours=1)).isoformat(),
+            )
+
+        response = self.client.get(self.URL, {'studyspace': self.studyspace.pk})
+        self.assertEqual(len(response.json()), 14)
+
+    def test_rescheduling_moves_the_block(self):
+        plan = self._create().json()
+        moved = self.now + timedelta(days=5)
+
+        response = self.client.patch(f"{self.URL}{plan['id']}/", {
+            'starts_at': moved.isoformat(),
+            'ends_at': (moved + timedelta(hours=1)).isoformat(),
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['duration_minutes'], 60)
+
+    def test_the_client_cannot_write_the_status(self):
+        # El estado lo mueve el servicio; mandarlo por PATCH no debe hacer nada.
+        plan = self._create().json()
+        response = self.client.patch(
+            f"{self.URL}{plan['id']}/", {'status': 'completed'}, format='json'
+        )
+        self.assertEqual(response.json()['status'], 'planned')
+
+    def test_starting_returns_the_real_session(self):
+        plan = self._create().json()
+        response = self.client.post(
+            f"{self.URL}{plan['id']}/start/",
+            {'focus_minutes': 25, 'rest_minutes': 5},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body['focus_minutes'], 25)
+        self.assertTrue(body['is_active'])
+
+        plan_after = self.client.get(f"{self.URL}{plan['id']}/").json()
+        self.assertEqual(plan_after['status'], 'started')
+        self.assertEqual(plan_after['study_session'], body['id'])
+
+    def test_cancelling_leaves_the_block_in_the_calendar(self):
+        plan = self._create().json()
+        response = self.client.post(f"{self.URL}{plan['id']}/cancel/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'cancelled')
+
+    def test_another_account_neither_sees_nor_touches_the_plans(self):
+        from apps.users.models import User
+
+        plan = self._create().json()
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(intruder)
+
+        self.assertEqual(
+            len(self.client.get(self.URL, {'studyspace': self.studyspace.pk}).json()), 0
+        )
+        self.assertEqual(
+            self.client.post(f"{self.URL}{plan['id']}/cancel/").status_code, 404
+        )
+        # Mismo guard que StudySessionViewSet: get_queryset filtra la lectura,
+        # no la escritura.
+        self.assertEqual(self._create(goal="ajeno").status_code, 400)
+
+    def test_anonymous_requests_are_rejected(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.URL).status_code, 401)
+
+
 class ColumnLayoutIndexingTests(SimpleTestCase):
     """El editor puede partir una nota en dos columnas; el mapa no debe notarlo.
 

@@ -11,6 +11,7 @@ from apps.studyspace.api.filters import (
     AnnotationFilter,
     BlockFilter,
     BlockLinkFilter,
+    PlannedSessionFilter,
     ReferenceFilter,
     StudySessionFilter,
 )
@@ -22,6 +23,7 @@ from apps.studyspace.services.reference_service import ReferenceService
 from apps.studyspace.services.source_service import SourceService
 from apps.studyspace.services.annotation_service import AnnotationService
 from apps.studyspace.services.study_session_service import StudySessionService
+from apps.studyspace.services.planned_session_service import PlannedSessionService
 
 
 class StudyspaceViewSet(viewsets.ModelViewSet):
@@ -478,6 +480,102 @@ class StudySessionViewSet(
     def finish(self, request, pk=None):
         session = self.service.finish(session=self.get_object())
         return Response(StudySessionSerializer(session).data, status=status.HTTP_200_OK)
+
+
+class PlannedSessionViewSet(
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
+    """Bloques de estudio planificados: el calendario del studyspace.
+
+    Con update, al reves que StudySessionViewSet: un plan es una intencion, y
+    una intencion se cambia de opinion. Lo que no se puede cambiar desde afuera
+    es el estado ni el enlace con la sesion real -- esas transiciones las hace
+    el servicio, porque "arrancar algo cancelado" tiene que ser imposible y no
+    solo improbable.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = PlannedSessionSerializer
+    filterset_class = PlannedSessionFilter
+    # El recorte ya lo hace el rango de fechas: el calendario pide exactamente
+    # el mes que dibuja. Paginar eso de a diez seria devolver media grilla, y el
+    # cliente no tendria forma de saber que le falta la otra mitad. Mismo
+    # criterio que BlockViewSet y ReferenceViewSet.
+    pagination_class = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = PlannedSessionService()
+        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+
+    def get_queryset(self):
+        return self.service.get_user_planned_sessions(user=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return PlannedSessionCreateSerializer
+        if self.action in ('update', 'partial_update'):
+            return PlannedSessionUpdateSerializer
+        if self.action == 'start':
+            return PlannedSessionStartSerializer
+        return PlannedSessionSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # get_queryset filtra la lectura, no la escritura: sin este guard se
+        # podria agendar en el studyspace de otra cuenta pasando su id. Mismo
+        # chequeo que StudySessionViewSet.create.
+        studyspace = data['studyspace']
+        owned = self.studyspace_service.get_user_studyspaces(user=request.user)
+        if not owned.filter(pk=studyspace.pk).exists():
+            raise ValidationError("El studyspace no existe o no te pertenece.")
+
+        plan = self.service.create(
+            studyspace=studyspace,
+            goal=data['goal'],
+            starts_at=data['starts_at'],
+            ends_at=data['ends_at'],
+            timezone_name=data['timezone'],
+            reminder_offset_minutes=data.get('reminder_offset_minutes', 60),
+        )
+
+        return Response(
+            PlannedSessionSerializer(plan).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, partial=kwargs.pop('partial', False))
+        serializer.is_valid(raise_exception=True)
+
+        plan = self.service.reschedule(self.get_object(), **serializer.validated_data)
+        return Response(PlannedSessionSerializer(plan).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='start')
+    def start(self, request, pk=None):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        plan = self.get_object()
+        session = self.service.start(
+            plan=plan,
+            focus_minutes=serializer.validated_data['focus_minutes'],
+            rest_minutes=serializer.validated_data['rest_minutes'],
+        )
+        # Devuelve la sesion real y no el plan: el front que llama a esto va a
+        # abrir el temporizador, y lo que el temporizador necesita es la sesion.
+        return Response(StudySessionSerializer(session).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='cancel')
+    def cancel(self, request, pk=None):
+        plan = self.service.cancel(self.get_object())
+        return Response(PlannedSessionSerializer(plan).data, status=status.HTTP_200_OK)
 
 
 class BlockViewSet(mixins.UpdateModelMixin, viewsets.ReadOnlyModelViewSet):

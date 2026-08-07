@@ -359,3 +359,106 @@ class StudySession(models.Model):
         if self.finished_at:
             return self.finished_at - self.created_at
         return timezone.now() - self.created_at
+
+
+class PlannedSession(models.Model):
+    """Un bloque de tiempo reservado para estudiar, antes de que exista.
+
+    Es la contracara de StudySession y por eso son dos tablas. Aquella es el
+    registro de algo que pasó -- su `created_at` ES el momento en que arrancó --
+    y esta es la intención de algo que todavía no pasó. Un solo modelo para las
+    dos cosas tendría que mentir sobre si el estudio ocurrió o solo estaba
+    agendado, y ese es exactamente el dato que después no se puede recuperar.
+
+    Se enlazan cuando el usuario realmente empieza: `study_session` deja de ser
+    nulo y el plan pasa a `started`.
+    """
+
+    class Status(models.TextChoices):
+        PLANNED = 'planned', 'Planificada'
+        STARTED = 'started', 'Iniciada'
+        COMPLETED = 'completed', 'Completada'
+        MISSED = 'missed', 'No realizada'
+        CANCELLED = 'cancelled', 'Cancelada'
+
+    # Relaciones
+    studyspace = models.ForeignKey(
+        'Studyspace', on_delete=models.CASCADE, related_name='planned_sessions'
+    )
+    # SET_NULL y no CASCADE: borrar el registro de una sesión ya ejecutada no
+    # debería borrar el plan que la originó -- son hechos distintos.
+    study_session = models.OneToOneField(
+        StudySession,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='plan',
+    )
+
+    # Metadatos
+    goal = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PLANNED
+    )
+
+    # El bloque. Se planifica tiempo, no ciclos: el ritmo pomodoro se elige al
+    # arrancar, y por eso acá no hay focus/rest -- la duración ES `ends_at -
+    # starts_at` y no un tercer campo que pueda contradecirla.
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+
+    # Zona IANA con la que se planificó, guardada en la sesión y NO en el User.
+    # El instante ya es absoluto (se guarda en UTC), así que el recordatorio no
+    # la necesita para disparar; la necesita el correo, que tiene que decir
+    # "17:00" y no un UTC crudo. Guardarla acá evita tocar el modelo de usuario
+    # y sigue siendo correcta si la persona viaja.
+    timezone = models.CharField(max_length=64, default='UTC')
+
+    # Recordatorio
+    reminder_offset_minutes = models.PositiveIntegerField(
+        null=True, blank=True, default=60,
+        help_text="Minutos de antelación del correo. NULL = sin recordatorio.",
+    )
+    # Denormalizado a propósito: `starts_at - offset`. El barrido periódico
+    # pregunta "¿qué vence?" muchas veces por hora, y con este campo esa
+    # consulta es un índice en vez de una resta calculada en SQL sobre la tabla
+    # entera. Lo escribe el servicio, nunca el cliente.
+    reminder_at = models.DateTimeField(null=True, blank=True, editable=False)
+    reminder_sent_at = models.DateTimeField(null=True, blank=True, editable=False)
+
+    # Trazabilidad temporal
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['starts_at']
+        constraints = [
+          models.CheckConstraint(
+                condition=models.Q(ends_at__gt=models.F("starts_at")),
+                name="planned_session_ends_after_start",
+            )
+        ]
+        indexes = [
+            # El barrido filtra por estas tres en este orden.
+            models.Index(
+                fields=['reminder_sent_at', 'reminder_at'],
+                name='planned_session_due_idx',
+            ),
+            # El calendario lee un mes de un espacio de estudio.
+            models.Index(
+                fields=['studyspace', 'starts_at'],
+                name='planned_session_range_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Plan: {self.goal} ({self.starts_at:%Y-%m-%d %H:%M})"
+
+    @property
+    def duration(self):
+        return self.ends_at - self.starts_at
+
+    @property
+    def is_open(self):
+        """El plan sigue en pie: ni cancelado, ni vencido, ni ya arrancado."""
+        return self.status == self.Status.PLANNED

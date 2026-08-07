@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from apps.studyspace.models import (
     Studyspace, Note, Source, NoteImage, Annotation, Reference, Block, BlockLink,
-    StudySession,
+    StudySession, PlannedSession,
 )
 
 
@@ -392,5 +392,81 @@ class StudySessionCreateSerializer(serializers.Serializer):
 
     goal = serializers.CharField(max_length=255)
     studyspace = serializers.PrimaryKeyRelatedField(queryset=Studyspace.objects.all())
+    focus_minutes = serializers.IntegerField()
+    rest_minutes = serializers.IntegerField()
+
+
+class PlannedSessionSerializer(serializers.ModelSerializer):
+    """Lectura de un bloque planificado, para pintar el calendario.
+
+    `duration_minutes` viaja calculado y no se guarda: la duracion ES el
+    intervalo entre las dos puntas, y mandar un tercer numero que pueda
+    contradecirlas es invitar a que algun dia se contradigan.
+    """
+
+    studyspace_title = serializers.CharField(source='studyspace.title', read_only=True)
+    duration_minutes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PlannedSession
+        fields = [
+            'id',
+            'goal',
+            'studyspace',
+            'studyspace_title',
+            'starts_at',
+            'ends_at',
+            'duration_minutes',
+            'timezone',
+            'reminder_offset_minutes',
+            'reminder_sent_at',
+            'status',
+            'study_session',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['status', 'study_session', 'reminder_sent_at']
+
+    def get_duration_minutes(self, plan) -> int:
+        return round(plan.duration.total_seconds() / 60)
+
+
+class PlannedSessionCreateSerializer(serializers.Serializer):
+    """Lo que se elige al reservar un bloque: cuando, para que, y si avisar.
+
+    Serializer plano y no ModelSerializer porque `reminder_at` es derivado y lo
+    escribe el servicio; dejar que un ModelSerializer toque el modelo directo
+    abriria la puerta a crear un plan con el recordatorio sin calcular.
+    """
+
+    goal = serializers.CharField(max_length=255)
+    studyspace = serializers.PrimaryKeyRelatedField(queryset=Studyspace.objects.all())
+    starts_at = serializers.DateTimeField()
+    ends_at = serializers.DateTimeField()
+    # El navegador la manda con Intl.DateTimeFormat().resolvedOptions().timeZone.
+    timezone = serializers.CharField(max_length=64)
+    # `null` explicito significa "sin recordatorio", que no es lo mismo que
+    # omitir el campo -- por eso allow_null y un default aparte.
+    reminder_offset_minutes = serializers.IntegerField(
+        required=False, allow_null=True, default=60
+    )
+
+
+class PlannedSessionUpdateSerializer(serializers.Serializer):
+    """Reprogramar: todo opcional, porque mover la hora y cambiar el objetivo
+    son dos ediciones distintas que comparten endpoint."""
+
+    goal = serializers.CharField(max_length=255, required=False)
+    starts_at = serializers.DateTimeField(required=False)
+    ends_at = serializers.DateTimeField(required=False)
+    timezone = serializers.CharField(max_length=64, required=False)
+    reminder_offset_minutes = serializers.IntegerField(
+        required=False, allow_null=True
+    )
+
+
+class PlannedSessionStartSerializer(serializers.Serializer):
+    """El ritmo se elige al arrancar, no al planificar."""
+
     focus_minutes = serializers.IntegerField()
     rest_minutes = serializers.IntegerField()

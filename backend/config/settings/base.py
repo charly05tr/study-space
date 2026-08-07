@@ -98,6 +98,26 @@ STATIC_ROOT = '/app/staticfiles'
 
 AUTH_USER_MODEL = 'users.User'
 
+# Celery Beat
+#
+# El barrido de recordatorios corre cada 5 minutos. Esa cadencia es la
+# resolución real del aviso: un recordatorio de 60 minutos puede salir entre los
+# 60 y los 55, y para un correo que dice "empieza pronto" ese margen es
+# invisible. Bajarlo a un minuto multiplicaría por cinco las consultas sin que
+# nadie note la diferencia.
+CELERY_BEAT_SCHEDULE = {
+    'sweep-session-reminders': {
+        'task': 'apps.studyspace.tasks.task_sweep_session_reminders',
+        'schedule': 300.0,
+    },
+    # Una vez por hora alcanza: nadie mira un bloque vencido a los treinta
+    # segundos de que venció, y el estado se recalcula igual al leer el mes.
+    'mark-missed-sessions': {
+        'task': 'apps.studyspace.tasks.task_mark_missed_sessions',
+        'schedule': 3600.0,
+    },
+}
+
 REST_FRAMEWORK = {
     # JWT first on purpose. DRF builds the WWW-Authenticate header from the
     # FIRST class listed, and SessionAuthentication has none to give, so a

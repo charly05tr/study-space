@@ -73,6 +73,22 @@ services:
       - redis
       - db
 
+  # Sin este servicio los recordatorios de sesión no salen: el worker ejecuta
+  # tareas, pero quien las dispara en horario es beat. Estaba solo en el compose
+  # de desarrollo.
+  celery_beat:
+    build: .
+    container_name: studyspace_celery_beat
+    command: celery -A config beat -l info
+    restart: always
+    environment:
+      - TZ=America/Managua
+    env_file:
+      - .env.prod
+    depends_on:
+      - redis
+      - db
+
   nginx:
     image: nginx:1.25-alpine
     container_name: studyspace_nginx

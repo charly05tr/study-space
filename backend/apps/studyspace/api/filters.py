@@ -1,7 +1,9 @@
 from django.db.models import F, Q
 from django_filters import rest_framework as filters
 
-from apps.studyspace.models import Annotation, Block, BlockLink, Reference, StudySession
+from apps.studyspace.models import (
+    Annotation, Block, BlockLink, PlannedSession, Reference, StudySession,
+)
 
 
 class AnnotationFilter(filters.FilterSet):
@@ -67,6 +69,29 @@ class StudySessionFilter(filters.FilterSet):
     class Meta:
         model = StudySession
         fields = ['studyspace', 'active']
+
+
+class PlannedSessionFilter(filters.FilterSet):
+    """El calendario se lee por espacio de estudio y por rango de fechas.
+
+    `from`/`to` y no una paginación: el calendario nunca pide "las próximas
+    veinte", pide exactamente el mes que tiene en pantalla. Pedirle al cliente
+    que pagine un mes sería obligarlo a resolver dos veces el mismo recorte que
+    ya hizo al dibujar la grilla.
+    """
+
+    # `from` es palabra reservada de Python, así que el nombre del parámetro
+    # público y el del atributo no pueden coincidir.
+    starts_after = filters.IsoDateTimeFilter(
+        field_name='starts_at', lookup_expr='gte', label='from'
+    )
+    starts_before = filters.IsoDateTimeFilter(
+        field_name='starts_at', lookup_expr='lt', label='to'
+    )
+
+    class Meta:
+        model = PlannedSession
+        fields = ['studyspace', 'status', 'starts_after', 'starts_before']
 
 
 class ReferenceFilter(filters.FilterSet):

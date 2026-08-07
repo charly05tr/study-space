@@ -33,6 +33,10 @@ class IEmailService(ABC):
         """Enviar correo de reactivacion"""
         pass
 
+    def send_session_reminder(self, user, context):
+        """Enviar el recordatorio de una sesion de estudio planificada"""
+        pass
+
     def send(self, user, message, subject):
         """Enviar correo generico"""
         pass
