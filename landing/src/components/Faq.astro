@@ -2,13 +2,20 @@
 import { Icon } from 'astro-icon/components';
 import { REPO_URL } from '../config';
 import { faqs } from '../data/faqs';
+
+interface Props {
+  /** The FAQ page uses it as its main heading. */
+  headingLevel?: 'h1' | 'h2';
+}
+
+const { headingLevel: Heading = 'h2' } = Astro.props;
 ---
 
-<section id="faq" class="scroll-mt-24 bg-marble py-24 md:py-32">
+<section id="faq" class="marble-faint min-h-dvh pt-40 pb-24 md:pt-48 md:pb-32">
   <div class="mx-auto grid max-w-6xl gap-12 px-6 lg:grid-cols-[1fr_1.6fr] lg:px-24">
     <div class="flex flex-col gap-4">
       <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-deep uppercase">Quaestiones</p>
-      <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium">Questions at the door</h2>
+      <Heading data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium sm:text-5xl">Questions at the door</Heading>
       <p data-reveal data-reveal-delay="200" class="text-lg text-ink-soft">
         Something else on your mind?{' '}
         <a href={`${REPO_URL}/issues`} class="font-semibold text-ink underline decoration-gold underline-offset-4 transition-colors duration-700 ease-fluid hover:text-gold-deep">

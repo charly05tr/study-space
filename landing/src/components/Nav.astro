@@ -3,6 +3,9 @@ import { Icon } from 'astro-icon/components';
 import { DOWNLOAD_URL, NAV_LINKS } from '../config';
 
 const delays = ['delay-100', 'delay-150', 'delay-200', 'delay-300', 'delay-500'];
+// Pages (not section anchors) are marked current from the URL.
+const pathname = Astro.url.pathname.replace(/\/$/, '') || '/';
+const isCurrentPage = (href: string) => !href.includes('#') && href === pathname;
 ---
 
 <header class="pointer-events-none fixed inset-x-0 top-0 z-40 px-4">
@@ -22,7 +25,8 @@ const delays = ['delay-100', 'delay-150', 'delay-200', 'delay-300', 'delay-500']
             <a
               href={link.href}
               data-nav-link
-              class="rounded-full px-3 py-2 text-sm font-semibold text-ink-soft transition-colors duration-700 ease-fluid hover:bg-marble-deep hover:text-ink aria-[current=true]:bg-marble-deep aria-[current=true]:text-ink"
+              aria-current={isCurrentPage(link.href) ? 'page' : undefined}
+              class="rounded-full px-3 py-2 text-sm font-semibold text-ink-soft transition-colors duration-700 ease-fluid hover:bg-marble-deep hover:text-ink aria-[current=true]:bg-marble-deep aria-[current=true]:text-ink aria-[current=page]:bg-marble-deep aria-[current=page]:text-ink"
             >
               {link.label}
             </a>
@@ -123,7 +127,8 @@ const delays = ['delay-100', 'delay-150', 'delay-200', 'delay-300', 'delay-500']
 
   // Mark the nav link of the section currently on screen.
   const navLinks = document.querySelectorAll<HTMLAnchorElement>('[data-nav-link]');
-  const sections = [...navLinks]
+  const sectionLinks = [...navLinks].filter((link) => link.hash && link.pathname === location.pathname);
+  const sections = sectionLinks
     .map((link) => document.querySelector<HTMLElement>(link.hash))
     .filter((section): section is HTMLElement => section !== null);
 
@@ -135,7 +140,7 @@ const delays = ['delay-100', 'delay-150', 'delay-200', 'delay-300', 'delay-500']
         else visible.delete(entry.target);
       }
       const current = sections.find((section) => visible.has(section));
-      for (const link of navLinks) {
+      for (const link of sectionLinks) {
         link.setAttribute('aria-current', String(current !== undefined && link.hash === `#${current.id}`));
       }
     },

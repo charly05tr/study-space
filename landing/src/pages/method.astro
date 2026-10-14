@@ -1,0 +1,19 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Nav from '../components/Nav.astro';
+import Method from '../components/Method.astro';
+import FinalCta from '../components/FinalCta.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout
+  title="The method · Study Space"
+  description="The method of loci, rebuilt for studying: lay the foundation, furnish the rooms with highlights and notes, then walk the halls before every exam."
+>
+  <Nav />
+  <main id="main">
+    <Method headingLevel="h1" />
+    <FinalCta />
+  </main>
+  <Footer />
+</Layout>

@@ -1,0 +1,31 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Nav from '../components/Nav.astro';
+import Faq from '../components/Faq.astro';
+import FinalCta from '../components/FinalCta.astro';
+import Footer from '../components/Footer.astro';
+import { faqs } from '../data/faqs';
+
+const faqSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((faq) => ({
+    '@type': 'Question',
+    name: faq.question,
+    acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+  })),
+};
+---
+
+<Layout
+  title="FAQ · Study Space"
+  description="Answers about Study Space: supported systems, offline use, where your files live, PDF import, LaTeX notes, updates and why there is no AI."
+>
+  <script slot="head" type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
+  <Nav />
+  <main id="main">
+    <Faq headingLevel="h1" />
+    <FinalCta />
+  </main>
+  <Footer />
+</Layout>

@@ -4,108 +4,466 @@ import { Icon } from 'astro-icon/components';
 import goldenHall from '../assets/images/golden-hall.jpg';
 import marbleHall from '../assets/images/marble-hall.jpg';
 import statueHall from '../assets/images/statue-hall.jpg';
-import sunsetColonnade from '../assets/images/sunset-colonnade.jpg';
+import romanForum from '../assets/images/roman-forum.jpg';
+import readerShot from '../assets/app/reader.png';
+import notesShot from '../assets/app/notes.png';
+import mathShot from '../assets/app/math.png';
+import graphShot from '../assets/app/graph.png';
+import calendarShot from '../assets/app/calendar.png';
+import sessionShot from '../assets/app/session.png';
 
 const rooms = [
   {
+    numeral: 'I',
     latin: 'Bibliotheca',
     title: 'Read without losing your place',
     icon: 'ph:book-open-text',
     image: goldenHall,
     alt: 'A golden hall lined with Corinthian columns and marble statues',
     body: 'Import a PDF and read it reflowed to your window, or in its original layout. Highlight passages, jump with keyboard shortcuts and keep a pomodoro running beside the page.',
+    shot: readerShot,
+    shotAlt: 'The Study Space reader with a highlighted passage, a running pomodoro and the annotations sidebar',
   },
   {
+    numeral: 'II',
     latin: 'Scriptorium',
     title: 'Write notes that cite the exact passage',
     icon: 'ph:pen-nib',
     image: marbleHall,
     alt: 'A marble gallery of fluted columns with gilded capitals',
     body: 'A block editor with slash commands, tables, two column layouts and LaTeX equations. Drop a highlight into a note and it links straight back to the page it came from.',
+    shot: notesShot,
+    shotAlt: 'A Study Space note that quotes highlights with their source and page number',
+    detail: mathShot,
+    detailAlt: 'A note with a LaTeX equation and a frequency table',
   },
   {
+    numeral: 'III',
     latin: 'Observatorium',
     title: 'See how your ideas connect',
     icon: 'ph:graph',
     image: statueHall,
     alt: 'A sunlit hall where two marble statues guard a long corridor',
-    body: 'Headings and highlights become concepts on a 3D map. Fly through it, follow the relations between them and promote any block that deserves a place.',
+    body: 'Headings and highlights become concepts on a map. Fly through it, follow the relations between them and promote any block that deserves a place.',
+    shot: graphShot,
+    shotAlt: 'The Study Space concept map with related ideas and a relation legend',
+    // The map is wider than the window: keep the map and legend, drop the sidebar.
+    shotPosition: 'object-right-top',
   },
   {
+    numeral: 'IV',
     latin: 'Horologium',
     title: 'Plan the hours you study',
     icon: 'ph:hourglass-medium',
-    image: sunsetColonnade,
-    alt: 'A marble colonnade at sunset overlooking the sea',
+    image: romanForum,
+    alt: 'A Roman forum at golden hour, with a colonnade and an amphitheater behind it',
     body: 'Schedule study sessions on a calendar, see what is coming this week and turn a plan into the time you actually sit down.',
+    shot: calendarShot,
+    shotAlt: 'The Study Space monthly calendar with planned study sessions',
+    detail: sessionShot,
+    detailAlt: 'A running focus session with a pomodoro timer',
   },
 ];
 
-const extras = [
-  { icon: 'ph:columns', text: 'One study space per subject' },
-  { icon: 'ph:books', text: 'A reference list for every subject' },
-  { icon: 'ph:keyboard', text: 'Keyboard shortcuts throughout the reader' },
-  { icon: 'ph:timer', text: 'Pomodoro timer inside the reader' },
-];
 ---
 
-<section id="rooms" class="scroll-mt-24 bg-marble py-24 md:py-32">
-  <div class="mx-auto max-w-6xl px-6 lg:px-24">
-    <div class="mx-auto flex max-w-[680px] flex-col items-center gap-4 text-center">
-      <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-deep uppercase">Four rooms, one palace</p>
-      <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium sm:text-5xl">
-        Every part of studying<br />has a room of its own
-      </h2>
-      <p data-reveal data-reveal-delay="200" class="text-lg text-ink-soft">
-        Walk from reading to writing to connecting without opening another app.
-      </p>
-    </div>
-
-    <div class="mt-16 grid gap-8 md:grid-cols-2">
-      {
-        rooms.map((room, index) => (
-          <article
-            data-reveal
-            data-reveal-delay={String((index % 2) * 120)}
-            class="group flex flex-col gap-6 rounded-3xl border border-gold/30 bg-vellum p-4 transition-all duration-700 ease-fluid hover:-translate-y-1 hover:border-gold/60 hover:shadow-[0_24px_48px_rgb(138_106_58/0.14)] sm:flex-row"
-          >
-            <div class="arch relative h-64 shrink-0 overflow-hidden border border-gold/30 sm:h-auto sm:w-40">
-              <Image
-                src={room.image}
-                alt={room.alt}
-                widths={[320, 480]}
-                sizes="(min-width: 640px) 160px, 90vw"
-                class="absolute inset-0 h-full w-full object-cover transition-transform duration-1000 ease-fluid group-hover:scale-105"
-              />
-            </div>
-            <div class="flex flex-col gap-3 py-2 pr-2">
-              <div class="flex items-center gap-3">
-                <span class="flex size-10 items-center justify-center rounded-xl border border-gold/40 bg-marble text-gold-deep">
-                  <Icon name={room.icon} class="size-5" aria-hidden="true" />
-                </span>
-                <span class="font-display text-sm tracking-[0.25em] text-gold-deep uppercase">{room.latin}</span>
-              </div>
-              <h3 class="font-display text-2xl font-medium">{room.title}</h3>
-              <p class="text-base text-ink-soft">{room.body}</p>
-            </div>
-          </article>
-        ))
-      }
-    </div>
-
-    <ul class="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {
-        extras.map((extra, index) => (
-          <li
-            data-reveal
-            data-reveal-delay={String(index * 80)}
-            class="flex items-center gap-3 rounded-2xl border border-gold/20 bg-vellum/60 p-4 text-sm font-medium text-ink-soft"
-          >
-            <Icon name={extra.icon} class="size-5 shrink-0 text-gold-deep" aria-hidden="true" />
-            {extra.text}
-          </li>
-        ))
-      }
-    </ul>
+<section id="rooms" class="marble scroll-mt-24 bg-fixed pt-24 md:pt-32">
+  <div class="mx-auto flex max-w-[680px] flex-col items-center gap-4 px-6 text-center">
+    <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-deep uppercase">Four rooms, one palace</p>
+    <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium sm:text-5xl">
+      Every part of studying<br />has a room of its own
+    </h2>
+    <p data-reveal data-reveal-delay="200" class="text-lg text-ink-soft">
+      Step through the doorway. Each hall opens onto the part of the app built for it.
+    </p>
   </div>
+
+  <div id="rooms-track" class="rooms-track mt-16" style={`--rooms: ${rooms.length}`}>
+    <div class="rooms-stage">
+      <!-- The doorway, seen once from the gallery before entering. -->
+      <p data-door-label class="door-label font-display text-xs tracking-[0.35em] text-gold-deep uppercase" aria-hidden="true">
+        Intrate · Enter the palace
+      </p>
+      <div data-door-frame class="door-frame arch border border-gold/60" aria-hidden="true"></div>
+
+      <div data-door-clip class="door-clip bg-night">
+        <!-- Each hall's ambience. The sharp photo shows only inside the closed doorway. -->
+        {
+          rooms.map((room, index) => (
+            <div data-hall-bg data-active={String(index === 0)} class="hall-bg absolute inset-0" aria-hidden="true">
+              <Image src={room.image} alt="" widths={[480]} sizes="100vw" class="h-full w-full object-cover" />
+            </div>
+          ))
+        }
+        <div data-door-sharp class="hall-sharp absolute inset-0" aria-hidden="true">
+          <Image src={rooms[0].image} alt="" widths={[480, 900]} sizes="(min-width: 640px) 360px, 70vw" class="h-full w-full object-cover object-[50%_40%]" />
+        </div>
+        <div data-hall-shade class="hall-shade absolute inset-0 bg-night"></div>
+
+        <!-- Hall index: also lets visitors jump between rooms. -->
+        <nav aria-label="Rooms" class="rooms-index absolute top-1/2 left-6 z-20 -translate-y-1/2 xl:left-12">
+          <ol class="flex flex-col gap-2">
+            {
+              rooms.map((room, index) => (
+                <li>
+                  <button
+                    type="button"
+                    data-room-mark={index}
+                    data-active={String(index === 0)}
+                    class="flex items-center gap-3 rounded-full py-2 pr-3 font-display text-xs tracking-[0.25em] text-marble/60 uppercase transition-colors duration-700 ease-fluid hover:text-marble data-[active=true]:text-gold-bright"
+                  >
+                    <span class="w-6 text-right">{room.numeral}</span>
+                    <span class="h-px w-4 bg-current" />
+                    {room.latin}
+                  </button>
+                </li>
+              ))
+            }
+          </ol>
+        </nav>
+
+        <div class="rooms-slides">
+          {
+            rooms.map((room, index) => (
+              <article
+                data-room-slide
+                data-state={index === 0 ? 'active' : 'after'}
+                aria-labelledby={`room-title-${index}`}
+                class="room-slide"
+              >
+                <div class="room-content mx-auto grid h-full max-w-7xl content-center items-center gap-8 px-6 py-24 lg:grid-cols-[0.7fr_1.3fr] lg:gap-12 lg:pr-12 lg:pl-48">
+                  <div class="room-text flex flex-col gap-4 text-marble">
+                    <div class="flex items-center gap-3">
+                      <span class="flex size-10 items-center justify-center rounded-xl border border-gold/50 bg-night/60 text-gold-bright">
+                        <Icon name={room.icon} class="size-5" aria-hidden="true" />
+                      </span>
+                      <span class="font-display text-sm tracking-[0.25em] text-gold-bright uppercase">
+                        {room.numeral} · {room.latin}
+                      </span>
+                    </div>
+                    <h3 id={`room-title-${index}`} class="font-display text-3xl font-medium text-gilded sm:text-4xl">
+                      {room.title}
+                    </h3>
+                    <p class="max-w-[440px] text-base text-marble/80 sm:text-lg">{room.body}</p>
+                  </div>
+
+                  <figure class="room-window relative">
+                    <!-- A desktop window around the real app. Every slide shares its position and size. -->
+                    <div class="overflow-hidden rounded-xl border border-gold/40 bg-vellum shadow-[0_32px_80px_rgb(0_0_0/0.45)]">
+                      <div class="flex items-center justify-between border border-x-0 border-t-0 border-gold/20 bg-marble px-3 py-2">
+                        <span class="flex items-center gap-2 text-xs text-stone">
+                          <img src="/favicon.png" alt="" width="16" height="16" class="size-4 rounded-full" />
+                          Study Space
+                        </span>
+                        <span class="flex items-center gap-3 text-stone" aria-hidden="true">
+                          <Icon name="ph:minus" class="size-3" />
+                          <Icon name="ph:square" class="size-3" />
+                          <Icon name="ph:x" class="size-3" />
+                        </span>
+                      </div>
+                      <div class="aspect-video bg-vellum">
+                        <Image
+                          src={room.shot}
+                          alt={room.shotAlt}
+                          widths={[640, 1024, 1600]}
+                          sizes="(min-width: 1024px) 760px, 90vw"
+                          quality={85}
+                          class:list={['h-full w-full object-cover', room.shotPosition ?? 'object-top']}
+                        />
+                      </div>
+                    </div>
+                    {room.detail && (
+                      <div class="room-detail absolute -bottom-8 -left-8 hidden w-2/5 overflow-hidden rounded-lg border border-gold/50 bg-vellum shadow-[0_24px_48px_rgb(0_0_0/0.4)] sm:block">
+                        <Image
+                          src={room.detail}
+                          alt={room.detailAlt ?? ''}
+                          widths={[320, 640]}
+                          sizes="260px"
+                          quality={85}
+                          class="block h-auto w-full"
+                        />
+                      </div>
+                    )}
+                  </figure>
+                </div>
+              </article>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+
 </section>
+
+<style>
+  /* Without JavaScript: the doorway is open and every room is a full panel. */
+  .door-label,
+  .door-frame,
+  .hall-sharp,
+  .rooms-index {
+    display: none;
+  }
+
+  .door-clip {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hall-bg {
+    opacity: 0;
+    transform: scale(1.12);
+    filter: blur(14px) saturate(1.1);
+  }
+
+  .hall-bg[data-active='true'] {
+    opacity: 1;
+  }
+
+  .hall-shade {
+    opacity: 0.82;
+  }
+
+  .room-slide {
+    position: relative;
+    min-height: 100dvh;
+  }
+
+  /* Pinned tour: the doorway opens once, then the app inside changes room by room. */
+  .rooms-track[data-immersive] {
+    height: calc(200dvh + var(--rooms) * 80dvh);
+  }
+
+  .rooms-track[data-immersive] .rooms-stage {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .rooms-track[data-immersive] .door-clip {
+    position: absolute;
+    inset: 0;
+    will-change: clip-path;
+  }
+
+  .rooms-track[data-immersive] .door-label,
+  .rooms-track[data-immersive] .door-frame {
+    display: block;
+    position: absolute;
+    pointer-events: none;
+  }
+
+  .rooms-track[data-immersive] .door-label {
+    left: 0;
+    right: 0;
+    text-align: center;
+  }
+
+  .rooms-track[data-immersive] .hall-sharp {
+    display: block;
+    inset: auto;
+  }
+
+  .rooms-track[data-immersive] .hall-bg {
+    transition: opacity 900ms var(--ease-fluid);
+  }
+
+  .rooms-track[data-immersive] .rooms-index {
+    opacity: 0;
+    transition: opacity 700ms var(--ease-fluid);
+  }
+
+  @media (min-width: 1024px) {
+    .rooms-track[data-immersive] .rooms-index {
+      display: block;
+    }
+  }
+
+  .rooms-track[data-immersive][data-entered] .rooms-index {
+    opacity: 1;
+  }
+
+  .rooms-track[data-immersive] .room-slide {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+    pointer-events: none;
+  }
+
+  .rooms-track[data-immersive] .room-text,
+  .rooms-track[data-immersive] .room-window,
+  .rooms-track[data-immersive] .room-detail {
+    opacity: 0;
+    transition:
+      opacity 700ms var(--ease-fluid),
+      transform 700ms var(--ease-fluid);
+  }
+
+  /* The text moves with the direction of travel; the window stays put and only its content changes. */
+  .rooms-track[data-immersive] .room-slide[data-state='before'] .room-text {
+    transform: translateY(-1.5rem);
+  }
+
+  .rooms-track[data-immersive] .room-slide[data-state='after'] .room-text {
+    transform: translateY(1.5rem);
+  }
+
+  .rooms-track[data-immersive] .room-detail {
+    transform: translateY(1rem);
+  }
+
+  /* The first window rises into place as the doorway finishes opening. */
+  .rooms-track[data-immersive]:not([data-entered]) .room-window {
+    transform: translateY(3rem) scale(0.96);
+  }
+
+  .rooms-track[data-immersive][data-entered] .room-slide[data-state='active'] {
+    pointer-events: auto;
+  }
+
+  .rooms-track[data-immersive][data-entered] .room-slide[data-state='active'] .room-text,
+  .rooms-track[data-immersive][data-entered] .room-slide[data-state='active'] .room-window,
+  .rooms-track[data-immersive][data-entered] .room-slide[data-state='active'] .room-detail {
+    opacity: 1;
+    transform: none;
+  }
+
+  .rooms-track[data-immersive][data-entered] .room-slide[data-state='active'] .room-detail {
+    transition-delay: 200ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rooms-track[data-immersive] .room-text,
+    .rooms-track[data-immersive] .room-window,
+    .rooms-track[data-immersive] .room-detail {
+      transform: none !important;
+    }
+  }
+</style>
+
+<script>
+  const track = document.getElementById('rooms-track')!;
+  // Reduced motion skips the doorway and keeps the room changes as plain crossfades.
+  const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  track.dataset.immersive = '';
+
+  const stage = track.querySelector<HTMLElement>('.rooms-stage')!;
+  const label = track.querySelector<HTMLElement>('[data-door-label]')!;
+  const frame = track.querySelector<HTMLElement>('[data-door-frame]')!;
+  const clip = track.querySelector<HTMLElement>('[data-door-clip]')!;
+  const sharp = track.querySelector<HTMLElement>('[data-door-sharp]')!;
+  const shade = track.querySelector<HTMLElement>('[data-hall-shade]')!;
+  const backgrounds = track.querySelectorAll<HTMLElement>('[data-hall-bg]');
+  const slides = track.querySelectorAll<HTMLElement>('[data-room-slide]');
+  const marks = track.querySelectorAll<HTMLButtonElement>('[data-room-mark]');
+  const count = slides.length;
+
+  const clamp = (value: number, min = 0, max = 1) => Math.min(Math.max(value, min), max);
+  const lerp = (from: number, to: number, t: number) => from + (to - from) * t;
+  const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+
+  // Scroll budget, in screens: one to open the doorway, then a stretch per room.
+  const DOOR = 1;
+  const ROOM = 0.8;
+
+  let active = -1;
+  const setActive = (next: number) => {
+    if (next === active) return;
+    active = next;
+    slides.forEach((slide, index) => {
+      slide.dataset.state = index === next ? 'active' : index < next ? 'before' : 'after';
+      slide.toggleAttribute('inert', index !== next);
+    });
+    backgrounds.forEach((bg, index) => (bg.dataset.active = String(index === next)));
+    marks.forEach((mark, index) => {
+      mark.dataset.active = String(index === next);
+      if (index === next) mark.setAttribute('aria-current', 'step');
+      else mark.removeAttribute('aria-current');
+    });
+  };
+
+  const render = () => {
+    const width = stage.clientWidth;
+    const height = stage.clientHeight;
+    const scrolled = -track.getBoundingClientRect().top;
+
+    // I. The doorway opens once, on the way in.
+    const open = calm ? 1 : ease(clamp(scrolled / (height * DOOR * 0.9)));
+    const doorWidth = width < 640 ? width * 0.68 : Math.min(width * 0.3, height * 0.46);
+    const doorHeight = Math.min(height * 0.66, doorWidth * 1.7);
+    const doorLeft = (width - doorWidth) / 2;
+    const doorTop = (height - doorHeight) / 2 + height * 0.05;
+
+    const top = lerp(doorTop, 0, open);
+    const left = lerp(doorLeft, 0, open);
+    const right = lerp(width - doorLeft - doorWidth, 0, open);
+    const bottom = lerp(height - doorTop - doorHeight, 0, open);
+    const radius = lerp(doorWidth / 2, 0, open);
+    clip.style.clipPath =
+      open >= 1 ? 'none' : `inset(${top}px ${right}px ${bottom}px ${left}px round ${radius}px ${radius}px 0 0)`;
+
+    const frameInset = 10;
+    Object.assign(frame.style, {
+      left: `${left - frameInset}px`,
+      top: `${top - frameInset}px`,
+      width: `${width - left - right + frameInset * 2}px`,
+      height: `${height - top - bottom + frameInset * 2}px`,
+      opacity: String(1 - open),
+    });
+    label.style.top = `${doorTop - 48}px`;
+    label.style.opacity = String(1 - clamp(open * 3));
+
+    // The sharp photo fills the doorway at close to its native size and grows with it, fading into
+    // the soft ambience before it would have to be upscaled.
+    Object.assign(sharp.style, {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width - left - right}px`,
+      height: `${height - top - bottom}px`,
+      opacity: String(1 - clamp(open * 2.2)),
+    });
+    shade.style.opacity = String(lerp(0, 0.82, clamp(open * 1.3)));
+    track.toggleAttribute('data-entered', open > 0.85);
+
+    // II. Inside, each stretch of scroll is one room.
+    const roomScroll = scrolled - height * DOOR;
+    setActive(clamp(Math.floor(roomScroll / (height * ROOM)), 0, count - 1));
+  };
+
+  // Jump to a room from the index.
+  marks.forEach((mark, index) => {
+    mark.addEventListener('click', () => {
+      const trackTop = track.getBoundingClientRect().top + window.scrollY;
+      const height = stage.clientHeight;
+      window.scrollTo({
+        top: trackTop + height * (DOOR + ROOM * (index + 0.3)),
+        behavior: calm ? 'auto' : 'smooth',
+      });
+    });
+  });
+
+  let ticking = false;
+  const onScroll = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      render();
+    });
+  };
+
+  // Listen only while the tour is near the viewport.
+  new IntersectionObserver((entries) => {
+    const entry = entries[entries.length - 1];
+    if (entry.isIntersecting) {
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll, { passive: true });
+      render();
+    } else {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    }
+  }).observe(track);
+  render();
+</script>
