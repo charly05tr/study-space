@@ -1,0 +1,8 @@
+dist/
+.astro/
+node_modules/
+.env
+.DS_Store
+
+# Raw source assets (63MB OBJ + 8K textures); optimized copies live in src/assets and public/
+/assets/

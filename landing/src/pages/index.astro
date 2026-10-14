@@ -1,0 +1,47 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import Frieze from '../components/Frieze.astro';
+import Problem from '../components/Problem.astro';
+import Manifesto from '../components/Manifesto.astro';
+import Rooms from '../components/Rooms.astro';
+import Tagline from '../components/Tagline.astro';
+import Method from '../components/Method.astro';
+import Emblem from '../components/Emblem.astro';
+import Faq from '../components/Faq.astro';
+import FinalCta from '../components/FinalCta.astro';
+import Footer from '../components/Footer.astro';
+import { faqs } from '../data/faqs';
+
+const faqSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((faq) => ({
+    '@type': 'Question',
+    name: faq.question,
+    acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+  })),
+};
+---
+
+<Layout>
+  <Fragment slot="head">
+    <link rel="preload" href="/models/napoleon.glb" as="fetch" type="model/gltf-binary" crossorigin />
+    <script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
+  </Fragment>
+  <Nav />
+  <main id="main">
+    <Hero />
+    <Frieze />
+    <Problem />
+    <Manifesto />
+    <Rooms />
+    <Tagline />
+    <Method />
+    <Emblem />
+    <Faq />
+    <FinalCta />
+  </main>
+  <Footer />
+</Layout>

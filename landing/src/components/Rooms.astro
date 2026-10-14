@@ -1,0 +1,111 @@
+---
+import { Image } from 'astro:assets';
+import { Icon } from 'astro-icon/components';
+import goldenHall from '../assets/images/golden-hall.jpg';
+import marbleHall from '../assets/images/marble-hall.jpg';
+import statueHall from '../assets/images/statue-hall.jpg';
+import sunsetColonnade from '../assets/images/sunset-colonnade.jpg';
+
+const rooms = [
+  {
+    latin: 'Bibliotheca',
+    title: 'Read without losing your place',
+    icon: 'ph:book-open-text',
+    image: goldenHall,
+    alt: 'A golden hall lined with Corinthian columns and marble statues',
+    body: 'Import a PDF and read it reflowed to your window, or in its original layout. Highlight passages, jump with keyboard shortcuts and keep a pomodoro running beside the page.',
+  },
+  {
+    latin: 'Scriptorium',
+    title: 'Write notes that cite the exact passage',
+    icon: 'ph:pen-nib',
+    image: marbleHall,
+    alt: 'A marble gallery of fluted columns with gilded capitals',
+    body: 'A block editor with slash commands, tables, two column layouts and LaTeX equations. Drop a highlight into a note and it links straight back to the page it came from.',
+  },
+  {
+    latin: 'Observatorium',
+    title: 'See how your ideas connect',
+    icon: 'ph:graph',
+    image: statueHall,
+    alt: 'A sunlit hall where two marble statues guard a long corridor',
+    body: 'Headings and highlights become concepts on a 3D map. Fly through it, follow the relations between them and promote any block that deserves a place.',
+  },
+  {
+    latin: 'Horologium',
+    title: 'Plan the hours you study',
+    icon: 'ph:hourglass-medium',
+    image: sunsetColonnade,
+    alt: 'A marble colonnade at sunset overlooking the sea',
+    body: 'Schedule study sessions on a calendar, see what is coming this week and turn a plan into the time you actually sit down.',
+  },
+];
+
+const extras = [
+  { icon: 'ph:columns', text: 'One study space per subject' },
+  { icon: 'ph:books', text: 'A reference list for every subject' },
+  { icon: 'ph:keyboard', text: 'Keyboard shortcuts throughout the reader' },
+  { icon: 'ph:timer', text: 'Pomodoro timer inside the reader' },
+];
+---
+
+<section id="rooms" class="scroll-mt-24 bg-marble py-24 md:py-32">
+  <div class="mx-auto max-w-6xl px-6 lg:px-24">
+    <div class="mx-auto flex max-w-[680px] flex-col items-center gap-4 text-center">
+      <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-deep uppercase">Four rooms, one palace</p>
+      <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium sm:text-5xl">
+        Every part of studying<br />has a room of its own
+      </h2>
+      <p data-reveal data-reveal-delay="200" class="text-lg text-ink-soft">
+        Walk from reading to writing to connecting without opening another app.
+      </p>
+    </div>
+
+    <div class="mt-16 grid gap-8 md:grid-cols-2">
+      {
+        rooms.map((room, index) => (
+          <article
+            data-reveal
+            data-reveal-delay={String((index % 2) * 120)}
+            class="group flex flex-col gap-6 rounded-3xl border border-gold/30 bg-vellum p-4 transition-all duration-700 ease-fluid hover:-translate-y-1 hover:border-gold/60 hover:shadow-[0_24px_48px_rgb(138_106_58/0.14)] sm:flex-row"
+          >
+            <div class="arch relative h-64 shrink-0 overflow-hidden border border-gold/30 sm:h-auto sm:w-40">
+              <Image
+                src={room.image}
+                alt={room.alt}
+                widths={[320, 480]}
+                sizes="(min-width: 640px) 160px, 90vw"
+                class="absolute inset-0 h-full w-full object-cover transition-transform duration-1000 ease-fluid group-hover:scale-105"
+              />
+            </div>
+            <div class="flex flex-col gap-3 py-2 pr-2">
+              <div class="flex items-center gap-3">
+                <span class="flex size-10 items-center justify-center rounded-xl border border-gold/40 bg-marble text-gold-deep">
+                  <Icon name={room.icon} class="size-5" aria-hidden="true" />
+                </span>
+                <span class="font-display text-sm tracking-[0.25em] text-gold-deep uppercase">{room.latin}</span>
+              </div>
+              <h3 class="font-display text-2xl font-medium">{room.title}</h3>
+              <p class="text-base text-ink-soft">{room.body}</p>
+            </div>
+          </article>
+        ))
+      }
+    </div>
+
+    <ul class="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {
+        extras.map((extra, index) => (
+          <li
+            data-reveal
+            data-reveal-delay={String(index * 80)}
+            class="flex items-center gap-3 rounded-2xl border border-gold/20 bg-vellum/60 p-4 text-sm font-medium text-ink-soft"
+          >
+            <Icon name={extra.icon} class="size-5 shrink-0 text-gold-deep" aria-hidden="true" />
+            {extra.text}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

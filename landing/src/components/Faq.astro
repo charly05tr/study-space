@@ -1,0 +1,43 @@
+---
+import { Icon } from 'astro-icon/components';
+import { REPO_URL } from '../config';
+import { faqs } from '../data/faqs';
+---
+
+<section id="faq" class="scroll-mt-24 bg-marble py-24 md:py-32">
+  <div class="mx-auto grid max-w-6xl gap-12 px-6 lg:grid-cols-[1fr_1.6fr] lg:px-24">
+    <div class="flex flex-col gap-4">
+      <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-deep uppercase">Quaestiones</p>
+      <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium">Questions at the door</h2>
+      <p data-reveal data-reveal-delay="200" class="text-lg text-ink-soft">
+        Something else on your mind?{' '}
+        <a href={`${REPO_URL}/issues`} class="font-semibold text-ink underline decoration-gold underline-offset-4 transition-colors duration-700 ease-fluid hover:text-gold-deep">
+          Open an issue on GitHub
+        </a>{' '}
+        and it will get an answer.
+      </p>
+    </div>
+
+    <div class="flex flex-col gap-3">
+      {
+        faqs.map((faq, index) => (
+          <details
+            data-reveal
+            data-reveal-delay={String(index * 50)}
+            class="group rounded-2xl border border-gold/25 bg-vellum/80 transition-colors duration-700 ease-fluid open:border-gold/50 hover:border-gold/50"
+          >
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-4 rounded-2xl p-6 text-base font-semibold [&::-webkit-details-marker]:hidden">
+              {faq.question}
+              <Icon
+                name="ph:plus"
+                class="size-5 shrink-0 text-gold-deep transition-transform duration-700 ease-fluid group-open:rotate-45"
+                aria-hidden="true"
+              />
+            </summary>
+            <p class="px-6 pb-6 text-base text-ink-soft">{faq.answer}</p>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+</section>

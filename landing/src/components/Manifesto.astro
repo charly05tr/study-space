@@ -1,0 +1,130 @@
+---
+const chapters = [
+  {
+    numeral: 'I',
+    title: 'A summary is someone else’s reading',
+    body: 'Ask an AI for a summary and you get its conclusions in seconds. What you skip is the part where understanding happens: following an argument line by line until it becomes yours.',
+  },
+  {
+    numeral: 'II',
+    title: 'A quiz cannot test what you never read',
+    body: 'Generated questions feel productive, but memory holds on to what you wrestled with on the page, not to answers handed back to you.',
+  },
+  {
+    numeral: 'III',
+    title: 'So we built a place to read',
+    body: 'No chat box and no generate button. Just the text, your highlights, your notes and the quiet to think them through. The app keeps your library in order. The reading stays yours.',
+  },
+];
+---
+
+<section id="manifesto" class="relative bg-night text-marble" style="height: 340vh" aria-labelledby="manifesto-title">
+  <div class="sticky top-0 flex h-dvh items-center overflow-hidden">
+    <div class="mx-auto grid h-full w-full max-w-6xl grid-rows-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-center gap-6 px-6 pt-24 pb-8 lg:grid-cols-2 lg:grid-rows-1 lg:gap-16 lg:px-24 lg:py-0">
+      <!-- The bust, turning from shadow into light. -->
+      <div class="relative h-full w-full lg:h-[80dvh]">
+        <div aria-hidden="true" class="absolute top-1/2 left-1/2 size-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gold/15 blur-3xl lg:size-96"></div>
+        <div id="manifesto-stage" class="absolute inset-0"></div>
+      </div>
+
+      <div class="relative flex h-full flex-col justify-start gap-6 lg:gap-8 lg:h-auto lg:justify-center">
+        <div class="flex flex-col gap-4">
+          <p class="font-display text-xs tracking-[0.3em] text-gold-bright uppercase">Lectio · Why Study Space exists</p>
+          <h2 id="manifesto-title" class="sr-only">Read it yourself</h2>
+          <ol class="flex gap-3" aria-hidden="true">
+            {
+              chapters.map((chapter, index) => (
+                <li
+                  data-chapter-mark
+                  data-active={String(index === 0)}
+                  class="flex items-center gap-3 font-display text-sm text-marble/40 transition-colors duration-700 ease-fluid data-[active=true]:text-gold-bright"
+                >
+                  {chapter.numeral}
+                  {index < chapters.length - 1 && <span class="h-px w-8 bg-marble/20" />}
+                </li>
+              ))
+            }
+          </ol>
+        </div>
+
+        <div class="relative min-h-72 sm:min-h-64">
+          {
+            chapters.map((chapter, index) => (
+              <article
+                data-chapter
+                data-active={String(index === 0)}
+                class="absolute inset-x-0 top-0 flex translate-y-8 flex-col gap-4 opacity-0 blur-sm transition-all duration-1000 ease-fluid data-[active=true]:translate-y-0 data-[active=true]:opacity-100 data-[active=true]:blur-none"
+              >
+                <h3 class="font-display text-2xl font-medium text-gilded sm:text-4xl">{chapter.title}</h3>
+                <p class="max-w-[520px] text-base text-marble/75 sm:text-lg">{chapter.body}</p>
+              </article>
+            ))
+          }
+        </div>
+
+        <p
+          id="manifesto-coda"
+          class="hidden items-center gap-3 text-sm text-marble/50 opacity-0 sm:flex transition-opacity duration-1000 ease-fluid"
+        >
+          <span class="h-px w-8 bg-gold"></span>
+          Study Space has no AI features, on purpose.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const section = document.getElementById('manifesto')!;
+  const stageEl = document.getElementById('manifesto-stage')!;
+  const chapters = section.querySelectorAll<HTMLElement>('[data-chapter]');
+  const marks = section.querySelectorAll<HTMLElement>('[data-chapter-mark]');
+  const coda = document.getElementById('manifesto-coda')!;
+
+  let setBustProgress: (progress: number) => void = () => {};
+  let ticking = false;
+
+  const update = () => {
+    ticking = false;
+    const rect = section.getBoundingClientRect();
+    const travel = rect.height - window.innerHeight;
+    const progress = Math.min(Math.max(-rect.top / travel, 0), 1);
+    const active = Math.min(Math.floor(progress * chapters.length), chapters.length - 1);
+
+    chapters.forEach((chapter, index) => (chapter.dataset.active = String(index === active)));
+    marks.forEach((mark, index) => (mark.dataset.active = String(index <= active)));
+    coda.classList.toggle('opacity-100', progress > 0.8);
+    coda.classList.toggle('opacity-0', progress <= 0.8);
+    setBustProgress(progress);
+  };
+
+  const onScroll = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(update);
+  };
+
+  // Mount the second bust and listen to scroll only once the section is close.
+  let mounted = false;
+  new IntersectionObserver(
+    ([entry]) => {
+      if (entry.isIntersecting) {
+        window.addEventListener('scroll', onScroll, { passive: true });
+        update();
+        if (!mounted) {
+          mounted = true;
+          import('../scripts/bust')
+            .then(({ mountBust }) => mountBust(stageEl, 'manifesto'))
+            .then((bust) => {
+              setBustProgress = bust.setProgress;
+              update();
+            })
+            .catch((reason) => console.error('Manifesto bust failed to load', reason));
+        }
+      } else {
+        window.removeEventListener('scroll', onScroll);
+      }
+    },
+    { rootMargin: '50% 0px' },
+  ).observe(section);
+</script>

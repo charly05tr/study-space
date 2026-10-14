@@ -1,0 +1,138 @@
+---
+import { Icon } from 'astro-icon/components';
+import { DOWNLOAD_URL } from '../config';
+
+const proof = ['Works fully offline', 'No account needed', 'Your files stay on your computer'];
+---
+
+<section id="hero" class="marble relative isolate overflow-hidden pt-32 pb-16 md:pt-40 md:pb-24">
+  <!-- Columns framing the hall, drawn as fluted pilasters at the edges. -->
+  <div aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 hidden w-16 border border-gold/20 bg-marble-deep/60 lg:block">
+    <div class="mx-auto flex h-full w-max gap-2">
+      {Array.from({ length: 4 }).map(() => <span class="h-full w-px bg-gold/25" />)}
+    </div>
+  </div>
+  <div aria-hidden="true" class="pointer-events-none absolute inset-y-0 right-0 hidden w-16 border border-gold/20 bg-marble-deep/60 lg:block">
+    <div class="mx-auto flex h-full w-max gap-2">
+      {Array.from({ length: 4 }).map(() => <span class="h-full w-px bg-gold/25" />)}
+    </div>
+  </div>
+
+  <div class="mx-auto grid max-w-6xl items-center gap-12 px-6 lg:grid-cols-[1.25fr_1fr] lg:px-24">
+    <div class="flex flex-col gap-6">
+      <p data-reveal class="flex items-center gap-3 font-display text-xs tracking-[0.3em] text-gold-deep uppercase">
+        <span class="h-px w-8 bg-gold"></span>
+        Ars memoriae · Est. MMXXVI
+      </p>
+
+      <h1 data-reveal data-reveal-delay="100" class="max-w-[680px] font-display text-4xl font-medium text-engraved sm:text-6xl lg:text-5xl">
+        A memory palace<br />
+        for everything you study
+      </h1>
+
+      <p data-reveal data-reveal-delay="200" class="max-w-[680px] text-lg text-ink-soft">
+        Study Space keeps your PDFs, highlights, notes and equations in one quiet desktop app,
+        and links every idea into a graph you can walk through.
+      </p>
+
+      <div data-reveal data-reveal-delay="300" class="flex flex-wrap items-center gap-4">
+        <a
+          href={DOWNLOAD_URL}
+          class="group flex items-center gap-2 rounded-full bg-ink px-3 py-2 text-base font-semibold text-marble shadow-[0_8px_24px_rgb(27_23_18/0.18)] transition-all duration-700 ease-fluid hover:-translate-y-0.5 hover:bg-ink-soft active:translate-y-px active:scale-[0.98]"
+        >
+          <span class="flex size-8 items-center justify-center rounded-full bg-gold/90 text-ink">
+            <Icon name="ph:windows-logo-fill" class="size-4" aria-hidden="true" />
+          </span>
+          <span class="pr-2">Download for Windows</span>
+        </a>
+        <a
+          href="#rooms"
+          class="flex items-center gap-2 rounded-full px-3 py-2 text-base font-semibold text-ink-soft transition-colors duration-700 ease-fluid hover:text-ink"
+        >
+          Tour the rooms
+          <Icon name="ph:arrow-down" class="size-4" aria-hidden="true" />
+        </a>
+      </div>
+
+      <ul data-reveal data-reveal-delay="400" class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-stone">
+        {
+          proof.map((item) => (
+            <li class="flex items-center gap-2">
+              <Icon name="ph:seal-check" class="size-4 text-gold-deep" aria-hidden="true" />
+              {item}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+
+    <div data-reveal data-reveal-delay="200" class="relative mx-auto w-full max-w-md">
+      <!-- Arched niche holding the bust. -->
+      <div class="arch relative aspect-[4/5] overflow-hidden border border-gold/40 bg-marble-deep/70 p-2 shadow-[inset_0_-40px_80px_rgb(176_141_87/0.18)]">
+        <div class="arch relative h-full w-full overflow-hidden border border-gold/20 bg-vellum/40">
+          <div id="bust-stage" class="absolute inset-0" role="img" aria-label="Marble bust of Napoleon Bonaparte, the emblem of Study Space">
+            <div id="bust-loading" class="absolute inset-0 flex items-end justify-center pb-16 transition-opacity duration-700 ease-fluid">
+              <div class="flex flex-col items-center gap-4">
+                <div class="h-40 w-32 animate-pulse rounded-t-full bg-marble-deep"></div>
+                <div class="h-8 w-44 animate-pulse rounded-t-lg bg-marble-deep"></div>
+              </div>
+            </div>
+            <p id="bust-error" hidden class="absolute inset-x-6 bottom-24 text-center text-sm text-stone">
+              The bust could not be displayed because your browser has WebGL turned off.
+            </p>
+          </div>
+        </div>
+      </div>
+      <!-- Plinth -->
+      <div class="relative -mt-px flex flex-col items-center">
+        <div class="h-3 w-[104%] rounded-sm border border-gold/40 bg-marble-deep"></div>
+        <div class="flex h-12 w-[92%] items-center justify-center border border-gold/30 bg-vellum/80">
+          <span class="font-display text-xs tracking-[0.4em] text-gold-deep">SAPERE · AVDE</span>
+        </div>
+        <p id="bust-hint" class="mt-4 flex items-center gap-2 text-xs text-stone opacity-0 transition-opacity duration-1000 ease-fluid">
+          <Icon name="ph:hand-grabbing" class="size-4 text-gold-deep" aria-hidden="true" />
+          Drag to turn the bust
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const hero = document.getElementById('hero')!;
+  const stage = document.getElementById('bust-stage')!;
+  const loading = document.getElementById('bust-loading')!;
+  const error = document.getElementById('bust-error')!;
+  const hint = document.getElementById('bust-hint')!;
+
+  import('../scripts/bust')
+    .then(({ mountBust }) => mountBust(stage, 'hero'))
+    .then((bust) => {
+      loading.style.opacity = '0';
+      setTimeout(() => loading.remove(), 700);
+      setTimeout(() => hint.classList.replace('opacity-0', 'opacity-100'), 2200);
+
+      // Feed how far the hero has scrolled away, throttled to one read per frame.
+      let ticking = false;
+      const update = () => {
+        ticking = false;
+        const rect = hero.getBoundingClientRect();
+        bust.setProgress(-rect.top / rect.height);
+      };
+      window.addEventListener(
+        'scroll',
+        () => {
+          if (ticking) return;
+          ticking = true;
+          requestAnimationFrame(update);
+        },
+        { passive: true },
+      );
+      update();
+    })
+    .catch((reason) => {
+      console.error('Bust failed to load', reason);
+      loading.remove();
+      error.hidden = false;
+    });
+</script>

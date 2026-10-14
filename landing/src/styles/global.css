@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+@import '@fontsource/cinzel/400.css';
+@import '@fontsource/cinzel/500.css';
+@import '@fontsource/cinzel/600.css';
+@import '@fontsource-variable/manrope';
+
+@theme {
+  --font-display: 'Cinzel', 'Times New Roman', serif;
+  --font-sans: 'Manrope Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* Marble and parchment */
+  --color-marble: #f6f2ea;
+  --color-marble-deep: #ece5d8;
+  --color-vellum: #fbf9f4;
+
+  /* Ink and stone */
+  --color-ink: #1b1712;
+  --color-ink-soft: #4a4236;
+  --color-stone: #7a6f5f;
+
+  /* Gilding */
+  --color-gold: #b08d57;
+  --color-gold-bright: #d4b071;
+  --color-gold-deep: #8a6a3a;
+
+  /* Night palace */
+  --color-night: #131209;
+  --color-night-raised: #1f1f1f;
+
+  --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--color-marble);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background-color: var(--color-gold-bright);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer components {
+  /* Veined marble surface, the texture sits under a translucent wash so text stays legible. */
+  .marble {
+    background-color: var(--color-marble);
+    background-image:
+      linear-gradient(rgb(246 242 234 / 0.72), rgb(246 242 234 / 0.72)),
+      url('/marble.webp');
+    background-size: cover;
+    background-position: center;
+  }
+
+  .marble-faint {
+    background-color: var(--color-vellum);
+    background-image:
+      linear-gradient(rgb(251 249 244 / 0.88), rgb(251 249 244 / 0.88)),
+      url('/marble.webp');
+    background-size: 1400px auto;
+    background-position: center;
+  }
+
+  /* Gilded hairline used for frames and dividers. */
+  .gilded-rule {
+    height: 1px;
+    background-color: var(--color-gold);
+    opacity: 0.5;
+  }
+
+  .text-engraved {
+    background-image: linear-gradient(90deg, var(--color-ink), #6b5a43);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-gilded {
+    background-image: linear-gradient(90deg, #f5e7c8, var(--color-gold-bright) 45%, var(--color-gold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Arched window frame for palace imagery. */
+  .arch {
+    border-top-left-radius: 9999px;
+    border-top-right-radius: 9999px;
+  }
+
+  /* Scroll reveal: heavy fade up, resolved by IntersectionObserver. */
+  [data-reveal] {
+    opacity: 0;
+    transform: translateY(4rem);
+    filter: blur(12px);
+    transition:
+      opacity 900ms var(--ease-fluid),
+      transform 900ms var(--ease-fluid),
+      filter 900ms var(--ease-fluid);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  [data-reveal].is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-reveal] {
+      opacity: 1;
+      transform: none;
+      filter: none;
+      transition: none;
+    }
+  }
+
+  /* Without JavaScript nothing stays hidden. */
+  .no-js [data-reveal] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}

@@ -1,0 +1,145 @@
+---
+import { Icon } from 'astro-icon/components';
+import { DOWNLOAD_URL, NAV_LINKS } from '../config';
+
+const delays = ['delay-100', 'delay-150', 'delay-200', 'delay-300', 'delay-500'];
+---
+
+<header class="pointer-events-none fixed inset-x-0 top-0 z-40 px-4">
+  <nav
+    aria-label="Main"
+    class="pointer-events-auto mx-auto mt-6 flex w-max items-center gap-2 rounded-full border border-gold/30 bg-vellum/70 p-2 shadow-[0_8px_32px_rgb(27_23_18/0.08)] backdrop-blur-xl"
+  >
+    <a href="/" class="flex items-center gap-2 rounded-full py-1 pr-3 pl-1 transition-colors duration-700 ease-fluid hover:bg-marble-deep">
+      <img src="/favicon.png" alt="" width="32" height="32" class="size-8 rounded-full border border-gold/50 object-cover" />
+      <span class="font-display text-sm font-semibold tracking-widest">Study Space</span>
+    </a>
+
+    <ul class="hidden items-center gap-1 md:flex">
+      {
+        NAV_LINKS.map((link) => (
+          <li>
+            <a
+              href={link.href}
+              data-nav-link
+              class="rounded-full px-3 py-2 text-sm font-semibold text-ink-soft transition-colors duration-700 ease-fluid hover:bg-marble-deep hover:text-ink aria-[current=true]:bg-marble-deep aria-[current=true]:text-ink"
+            >
+              {link.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+
+    <a
+      href={DOWNLOAD_URL}
+      class="hidden items-center gap-2 rounded-full bg-ink px-3 py-2 text-sm font-semibold text-marble transition-all duration-700 ease-fluid hover:bg-ink-soft active:scale-[0.98] sm:flex"
+    >
+      <Icon name="ph:windows-logo" class="size-4" aria-hidden="true" />
+      Download
+    </a>
+
+    <button
+      type="button"
+      id="menu-toggle"
+      aria-expanded="false"
+      aria-controls="mobile-menu"
+      aria-label="Open menu"
+      class="relative size-10 rounded-full transition-colors duration-700 ease-fluid hover:bg-marble-deep active:scale-[0.98] md:hidden"
+    >
+      <span
+        data-line="top"
+        class="absolute top-4 left-3 h-px w-4 bg-ink transition-all duration-700 ease-fluid"></span>
+      <span
+        data-line="bottom"
+        class="absolute top-6 left-3 h-px w-4 bg-ink transition-all duration-700 ease-fluid"></span>
+    </button>
+  </nav>
+
+  <div
+    id="mobile-menu"
+    inert
+    class="pointer-events-none fixed inset-0 -z-10 flex flex-col justify-center gap-6 bg-vellum/80 px-8 opacity-0 backdrop-blur-3xl transition-opacity duration-700 ease-fluid data-[open=true]:pointer-events-auto data-[open=true]:opacity-100 md:hidden"
+  >
+    <ul class="flex flex-col gap-4">
+      {
+        NAV_LINKS.map((link, index) => (
+          <li class="overflow-hidden">
+            <a
+              href={link.href}
+              data-menu-link
+              class:list={[
+                'block translate-y-12 font-display text-4xl opacity-0 transition-all duration-700 ease-fluid',
+                delays[index],
+              ]}
+            >
+              {link.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+    <a
+      href={DOWNLOAD_URL}
+      data-menu-link
+      class:list={[
+        'flex w-max translate-y-12 items-center gap-2 rounded-full bg-ink px-3 py-2 text-base font-semibold text-marble opacity-0 transition-all duration-700 ease-fluid',
+        delays[NAV_LINKS.length],
+      ]}
+    >
+      <Icon name="ph:windows-logo" class="size-5" aria-hidden="true" />
+      Download for Windows
+    </a>
+  </div>
+</header>
+
+<script>
+  const toggle = document.getElementById('menu-toggle')!;
+  const menu = document.getElementById('mobile-menu')!;
+  const top = toggle.querySelector<HTMLElement>('[data-line="top"]')!;
+  const bottom = toggle.querySelector<HTMLElement>('[data-line="bottom"]')!;
+  const menuLinks = menu.querySelectorAll<HTMLElement>('[data-menu-link]');
+
+  function setOpen(open: boolean) {
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    menu.dataset.open = String(open);
+    menu.toggleAttribute('inert', !open);
+    document.body.style.overflow = open ? 'hidden' : '';
+    // Both lines meet at the center and cross into an X.
+    top.style.transform = open ? 'translateY(4px) rotate(45deg)' : '';
+    bottom.style.transform = open ? 'translateY(-4px) rotate(-45deg)' : '';
+    for (const link of menuLinks) {
+      link.classList.toggle('translate-y-12', !open);
+      link.classList.toggle('opacity-0', !open);
+    }
+  }
+
+  toggle.addEventListener('click', () => setOpen(toggle.getAttribute('aria-expanded') !== 'true'));
+  for (const link of menuLinks) link.addEventListener('click', () => setOpen(false));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setOpen(false);
+  });
+
+  // Mark the nav link of the section currently on screen.
+  const navLinks = document.querySelectorAll<HTMLAnchorElement>('[data-nav-link]');
+  const sections = [...navLinks]
+    .map((link) => document.querySelector<HTMLElement>(link.hash))
+    .filter((section): section is HTMLElement => section !== null);
+
+  const visible = new Set<Element>();
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) visible.add(entry.target);
+        else visible.delete(entry.target);
+      }
+      const current = sections.find((section) => visible.has(section));
+      for (const link of navLinks) {
+        link.setAttribute('aria-current', String(current !== undefined && link.hash === `#${current.id}`));
+      }
+    },
+    { rootMargin: '-45% 0px -50% 0px' },
+  );
+  for (const section of sections) observer.observe(section);
+</script>

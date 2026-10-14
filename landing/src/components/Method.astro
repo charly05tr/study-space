@@ -1,0 +1,52 @@
+---
+const steps = [
+  {
+    numeral: 'I',
+    title: 'Lay the foundation',
+    body: 'Create a study space for each subject and import the PDFs you have to master. Each one is converted once so it reads cleanly at any size.',
+  },
+  {
+    numeral: 'II',
+    title: 'Furnish the rooms',
+    body: 'Read, highlight what matters and write notes as you go. Every highlight you quote keeps a path back to its page.',
+  },
+  {
+    numeral: 'III',
+    title: 'Walk the halls',
+    body: 'Open the graph to see how concepts connect, then schedule the sessions that will carry you to the exam.',
+  },
+];
+---
+
+<section id="method" class="marble scroll-mt-24 py-24 md:py-32">
+  <div class="mx-auto max-w-6xl px-6 lg:px-24">
+    <div class="flex max-w-[680px] flex-col gap-4">
+      <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-deep uppercase">The method of loci</p>
+      <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium sm:text-5xl">
+        Build it once,<br />walk it before every exam
+      </h2>
+      <p data-reveal data-reveal-delay="200" class="text-lg text-ink-soft">
+        Greek orators remembered entire speeches by placing each idea in a room of an imagined
+        building. Study Space gives that building real walls.
+      </p>
+    </div>
+
+    <ol class="mt-16 grid gap-6 md:grid-cols-3">
+      {
+        steps.map((step, index) => (
+          <li
+            data-reveal
+            data-reveal-delay={String(index * 120)}
+            class="flex flex-col gap-4 rounded-3xl border border-gold/30 bg-vellum/85 p-8 backdrop-blur-sm"
+          >
+            <span class="flex size-16 items-center justify-center rounded-full border border-gold/50 font-display text-2xl text-gold-deep">
+              {step.numeral}
+            </span>
+            <h3 class="font-display text-2xl font-medium">{step.title}</h3>
+            <p class="text-base text-ink-soft">{step.body}</p>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>

@@ -1,0 +1,66 @@
+---
+const lines = ['Knowledge is not what you collect.', 'It is what you connect, revisit and make your own.'];
+---
+
+<section class="bg-night py-32 md:py-40">
+  <p class="sr-only">{lines.join(' ')}</p>
+  <div class="mx-auto flex max-w-6xl flex-col items-center gap-12 px-6">
+    <div class="flex items-center gap-4" aria-hidden="true">
+      <span class="h-px w-16 bg-gold/50"></span>
+      <span class="size-2 rotate-45 border border-gold"></span>
+      <span class="h-px w-16 bg-gold/50"></span>
+    </div>
+    <p id="tagline" aria-hidden="true" class="flex max-w-[960px] flex-col gap-4 text-center font-display text-3xl font-medium text-marble sm:text-4xl lg:text-5xl">
+      {
+        lines.map((line) => (
+          <span class="block text-balance">
+            {line.split(' ').map((word) => (
+              <>
+                <span data-word class="inline-block opacity-30 transition-[opacity,color] duration-1000 ease-fluid">
+                  {word}
+                </span>{' '}
+              </>
+            ))}
+          </span>
+        ))
+      }
+    </p>
+  </div>
+</section>
+
+<script>
+  // Each word lights up as it crosses a line just below the middle of the viewport.
+  const words = document.querySelectorAll<HTMLElement>('#tagline [data-word]');
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (reduced) {
+    for (const word of words) word.classList.replace('opacity-30', 'opacity-100');
+  } else {
+    let ticking = false;
+    const update = () => {
+      ticking = false;
+      const trigger = window.innerHeight * 0.62;
+      for (const word of words) {
+        const lit = word.getBoundingClientRect().top < trigger;
+        word.classList.toggle('opacity-100', lit);
+        word.classList.toggle('opacity-30', !lit);
+        word.classList.toggle('text-gold-bright', lit && word.textContent === 'connect,');
+      }
+    };
+    const section = document.getElementById('tagline')!;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(update);
+    };
+    // Listen only while the tagline is near the viewport.
+    new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        window.addEventListener('scroll', onScroll, { passive: true });
+        update();
+      } else {
+        window.removeEventListener('scroll', onScroll);
+      }
+    }, { rootMargin: '20% 0px' }).observe(section);
+  }
+</script>

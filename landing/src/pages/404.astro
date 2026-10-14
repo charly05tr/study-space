@@ -1,0 +1,21 @@
+---
+import { Icon } from 'astro-icon/components';
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Room not found · Study Space" noindex>
+  <main id="main" class="marble flex min-h-dvh flex-col items-center justify-center gap-6 px-6 text-center">
+    <p class="font-display text-8xl text-gold">CDIV</p>
+    <h1 class="max-w-[680px] font-display text-4xl font-medium text-engraved">This room was never built</h1>
+    <p class="max-w-[520px] text-lg text-ink-soft">
+      The page you were looking for is not part of the palace. Head back to the atrium and take another corridor.
+    </p>
+    <a
+      href="/"
+      class="flex items-center gap-2 rounded-full bg-ink px-3 py-2 text-base font-semibold text-marble transition-all duration-700 ease-fluid hover:bg-ink-soft active:scale-[0.98]"
+    >
+      <Icon name="ph:arrow-left" class="size-4" aria-hidden="true" />
+      Back to the atrium
+    </a>
+  </main>
+</Layout>

@@ -1,0 +1,40 @@
+---
+import { Image } from 'astro:assets';
+import { Icon } from 'astro-icon/components';
+import sunsetColonnade from '../assets/images/sunset-colonnade.jpg';
+import { DOWNLOAD_URL } from '../config';
+---
+
+<section class="relative isolate overflow-hidden bg-night py-32 md:py-40">
+  <Image
+    src={sunsetColonnade}
+    alt=""
+    widths={[640, 900]}
+    sizes="100vw"
+    class="absolute inset-0 -z-20 h-full w-full object-cover object-[50%_60%]"
+  />
+  <div class="absolute inset-0 -z-10 bg-night/75"></div>
+
+  <div class="mx-auto flex max-w-[680px] flex-col items-center gap-6 px-6 text-center">
+    <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-bright uppercase">Porta aperta est</p>
+    <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium text-gilded sm:text-5xl">
+      The doors are open.<br />Start building tonight.
+    </h2>
+    <p data-reveal data-reveal-delay="200" class="text-lg text-marble/80">
+      Install Study Space, import your first PDF and have your first room furnished before the
+      next lecture.
+    </p>
+    <div data-reveal data-reveal-delay="300" class="flex flex-col items-center gap-4">
+      <a
+        href={DOWNLOAD_URL}
+        class="flex items-center gap-2 rounded-full bg-marble px-3 py-2 text-base font-semibold text-ink shadow-[0_8px_32px_rgb(212_176_113/0.35)] transition-all duration-700 ease-fluid hover:-translate-y-0.5 hover:bg-vellum active:translate-y-px active:scale-[0.98]"
+      >
+        <span class="flex size-8 items-center justify-center rounded-full bg-gold text-ink">
+          <Icon name="ph:windows-logo-fill" class="size-4" aria-hidden="true" />
+        </span>
+        <span class="pr-2">Download for Windows</span>
+      </a>
+      <p class="text-sm text-marble/60">No account to create. Uninstall anytime from Windows settings.</p>
+    </div>
+  </div>
+</section>

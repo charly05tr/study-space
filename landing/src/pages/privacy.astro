@@ -1,0 +1,38 @@
+---
+import { Icon } from 'astro-icon/components';
+import Layout from '../layouts/Layout.astro';
+import { REPO_URL } from '../config';
+---
+
+<Layout title="Privacy · Study Space" description="Study Space runs on your computer and does not collect, send or sell your data.">
+  <main id="main" class="marble-faint min-h-dvh px-6 py-24">
+    <article class="mx-auto flex max-w-[680px] flex-col gap-6">
+      <a href="/" class="flex w-max items-center gap-2 text-sm font-semibold text-ink-soft transition-colors duration-700 ease-fluid hover:text-ink">
+        <Icon name="ph:arrow-left" class="size-4" aria-hidden="true" />
+        Back to Study Space
+      </a>
+      <h1 class="font-display text-4xl font-medium text-engraved">Privacy</h1>
+      <p class="text-lg text-ink-soft">
+        Study Space is a desktop app that runs on your own computer. It has no accounts and no servers of its own.
+      </p>
+      <h2 class="font-display text-2xl font-medium">What the app stores</h2>
+      <p class="text-base text-ink-soft">
+        Your study spaces, PDFs, highlights, notes and plans are saved in a folder on your computer,
+        under %LOCALAPPDATA%\StudySpace by default. Nothing in that folder is uploaded anywhere.
+      </p>
+      <h2 class="font-display text-2xl font-medium">What the app sends</h2>
+      <p class="text-base text-ink-soft">
+        Nothing. Study Space does not include analytics, tracking or advertising, and it does not send your content to any service.
+      </p>
+      <h2 class="font-display text-2xl font-medium">This website</h2>
+      <p class="text-base text-ink-soft">
+        This page sets no cookies and loads no third party trackers. Downloads are served by GitHub, which has its own privacy policy.
+      </p>
+      <h2 class="font-display text-2xl font-medium">Questions</h2>
+      <p class="text-base text-ink-soft">
+        Open an issue on{' '}
+        <a href={`${REPO_URL}/issues`} class="font-semibold text-ink underline decoration-gold underline-offset-4">GitHub</a>.
+      </p>
+    </article>
+  </main>
+</Layout>

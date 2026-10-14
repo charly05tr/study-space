@@ -1,0 +1,44 @@
+---
+// A carved inscription band: the five verbs of the study method, in Latin.
+const verbs = [
+  ['I', 'Legere', 'read'],
+  ['II', 'Notare', 'annotate'],
+  ['III', 'Scribere', 'write'],
+  ['IV', 'Connectere', 'connect'],
+  ['V', 'Ordinare', 'plan'],
+] as const;
+const sequence = [...verbs, ...verbs];
+---
+
+<div class="relative overflow-hidden border border-gold/30 bg-night py-6 text-marble" aria-label="Read, annotate, write, connect, plan">
+  <ul class="frieze-track flex w-max items-center" aria-hidden="true">
+    {
+      sequence.map(([numeral, latin, english]) => (
+        <li class="flex items-center gap-4 pr-12 whitespace-nowrap">
+          <span class="font-display text-sm text-gold">{numeral}</span>
+          <span class="font-display text-2xl tracking-[0.25em] text-gilded">{latin.toUpperCase()}</span>
+          <span class="text-sm text-marble/50">{english}</span>
+          <span class="ml-8 size-2 rotate-45 border border-gold/60" />
+        </li>
+      ))
+    }
+  </ul>
+</div>
+
+<style>
+  .frieze-track {
+    animation: frieze 48s linear infinite;
+  }
+
+  @keyframes frieze {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .frieze-track {
+      animation: none;
+    }
+  }
+</style>

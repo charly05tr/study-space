@@ -1,0 +1,62 @@
+---
+import { Image } from 'astro:assets';
+import { Icon } from 'astro-icon/components';
+import greekTemple from '../assets/images/greek-temple.jpg';
+
+const fragments = [
+  { icon: 'ph:file-pdf', text: 'Highlights trapped inside a PDF viewer' },
+  { icon: 'ph:note-pencil', text: 'Notes in a separate app, with no link back to the page' },
+  { icon: 'ph:function', text: 'Formulas scribbled in a paper notebook' },
+  { icon: 'ph:calendar-dots', text: 'Study sessions living in yet another calendar' },
+];
+---
+
+<section class="marble-faint py-24 md:py-32">
+  <div class="mx-auto grid max-w-6xl items-center gap-16 px-6 lg:grid-cols-2 lg:px-24">
+    <figure data-reveal class="relative mx-auto w-full max-w-sm">
+      <div class="arch overflow-hidden border border-gold/40 p-2">
+        <Image
+          src={greekTemple}
+          alt="Weathered columns of an ancient Greek temple, with the Parthenon in the distance"
+          widths={[400, 688]}
+          sizes="(min-width: 1024px) 384px, 90vw"
+          class="arch aspect-[3/4] w-full object-cover"
+        />
+      </div>
+      <figcaption class="mt-4 text-center font-display text-xs tracking-[0.3em] text-stone uppercase">
+        Columns standing, roof long gone
+      </figcaption>
+    </figure>
+
+    <div class="flex flex-col gap-6">
+      <p data-reveal class="font-display text-xs tracking-[0.3em] text-gold-deep uppercase">The ruins</p>
+      <h2 data-reveal data-reveal-delay="100" class="font-display text-4xl font-medium">
+        Most study setups leave you with ruins
+      </h2>
+      <p data-reveal data-reveal-delay="200" class="text-lg text-ink-soft">
+        Every piece survives somewhere, but nothing stands together. When the exam comes,
+        you spend the evening digging instead of remembering.
+      </p>
+      <ul class="flex flex-col gap-3">
+        {
+          fragments.map((fragment, index) => (
+            <li
+              data-reveal
+              data-reveal-delay={String(250 + index * 80)}
+              class="flex items-center gap-3 rounded-xl border border-gold/20 bg-vellum/70 p-3 text-base text-ink-soft"
+            >
+              <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-marble-deep text-gold-deep">
+                <Icon name={fragment.icon} class="size-4" aria-hidden="true" />
+              </span>
+              {fragment.text}
+            </li>
+          ))
+        }
+      </ul>
+      <p data-reveal class="text-lg font-medium text-ink">
+        Study Space rebuilds them into one structure, where every highlight remembers its page and
+        every note remembers its source.
+      </p>
+    </div>
+  </div>
+</section>
