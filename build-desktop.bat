@@ -1,7 +1,7 @@
 @echo off
 rem Builds the Windows installer: frontend -> collectstatic -> PyInstaller -> Inno Setup.
 rem Usage: build-desktop.bat [version]     (default version: 0.1.0)
-rem Output: dist\StudySpace-Setup-<version>.exe
+rem Output: dist\StudySpace-Setup.exe (stable name; the landing links to it directly)
 rem
 rem Reuses backend\.venv (created by setup-desktop.bat) on purpose: the bundle is
 rem built from the exact interpreter and packages the app is developed and tested with.
@@ -65,4 +65,4 @@ if not defined ISCC (
 "%ISCC%" /Qp "/DAppVersion=%APP_VERSION%" installer\studyspace.iss || (echo [error] Inno Setup compilation failed. & exit /b 1)
 
 echo.
-echo Done: dist\StudySpace-Setup-%APP_VERSION%.exe
+echo Done: dist\StudySpace-Setup.exe (version %APP_VERSION%)

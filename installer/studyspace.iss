@@ -23,7 +23,8 @@ DefaultDirName={autopf}\StudySpace
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\dist
-OutputBaseFilename=StudySpace-Setup-{#AppVersion}
+; Stable name so the landing can link to releases/latest/download/StudySpace-Setup.exe
+OutputBaseFilename=StudySpace-Setup
 SetupIconFile=..\backend\assets\icon.ico
 UninstallDisplayIcon={app}\{#AppExe}
 ArchitecturesAllowed=x64compatible
