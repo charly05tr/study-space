@@ -2,8 +2,9 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../features/auth/store/authStore';
 import type { AuthTokens } from '../features/auth/types';
+import { IS_DESKTOP } from './desktop';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const BASE_URL = IS_DESKTOP ? '/api' : import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
@@ -35,6 +36,8 @@ const processQueue = (error: unknown, token: string | null = null) => {
 // 1. INTERCEPTOR DE REQUEST
 axiosInstance.interceptors.request.use(
   (config) => {
+    // Desktop mode: the backend authenticates the local user on its own.
+    if (IS_DESKTOP) return config;
     const { tokens } = useAuthStore.getState();
     if (tokens?.access) {
       config.headers.Authorization = `Bearer ${tokens.access}`;
@@ -73,7 +76,7 @@ axiosInstance.interceptors.response.use(
     const originalRequest = error.config as CustomAxiosRequestConfig;
 
     // Si el token venció y no hemos reintentado esta petición aún
-    if (isExpiredToken(error) && originalRequest && !originalRequest._retry) {
+    if (!IS_DESKTOP && isExpiredToken(error) && originalRequest && !originalRequest._retry) {
 
       if (isRefreshing) {
         // Si YA estamos refrescando el token, ponemos esta petición en la cola a esperar

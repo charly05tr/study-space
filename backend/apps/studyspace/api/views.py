@@ -4,7 +4,7 @@ from rest_framework import mixins, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response 
-from apps.core.adapters.cloudinary_adapter import CloudinaryAdapter
+from apps.core.dependencies import get_image_service
 from apps.studyspace.services import converters
 from apps.studyspace.services.studyspace_service import StudyspaceService
 from apps.studyspace.api.filters import (
@@ -32,7 +32,7 @@ class StudyspaceViewSet(viewsets.ModelViewSet):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.service = StudyspaceService(image_service=CloudinaryAdapter)
+        self.service = StudyspaceService(image_service=get_image_service())
         
     def get_queryset(self):
         user = self.request.user
@@ -135,8 +135,8 @@ class NoteViewSet(viewsets.ModelViewSet):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.service = NoteService(image_service=CloudinaryAdapter)
-        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+        self.service = NoteService(image_service=get_image_service())
+        self.studyspace_service = StudyspaceService(image_service=get_image_service())
 
     def get_queryset(self):
         user = self.request.user
@@ -245,7 +245,7 @@ class ReferenceViewSet(viewsets.ModelViewSet):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.service = ReferenceService()
-        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+        self.studyspace_service = StudyspaceService(image_service=get_image_service())
 
     def get_queryset(self):
         return self.service.get_user_references(user=self.request.user)
@@ -284,7 +284,7 @@ class SourceViewSet(viewsets.ModelViewSet):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.service = SourceService()
-        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+        self.studyspace_service = StudyspaceService(image_service=get_image_service())
 
     def get_queryset(self):
         user = self.request.user
@@ -436,7 +436,7 @@ class StudySessionViewSet(
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.service = StudySessionService()
-        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+        self.studyspace_service = StudyspaceService(image_service=get_image_service())
 
     def get_queryset(self):
         return self.service.get_user_sessions(user=self.request.user)
@@ -509,7 +509,7 @@ class PlannedSessionViewSet(
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.service = PlannedSessionService()
-        self.studyspace_service = StudyspaceService(image_service=CloudinaryAdapter)
+        self.studyspace_service = StudyspaceService(image_service=get_image_service())
 
     def get_queryset(self):
         return self.service.get_user_planned_sessions(user=self.request.user)

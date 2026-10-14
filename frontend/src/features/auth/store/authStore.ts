@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, AuthTokens } from '../types';
+import { DESKTOP_PLACEHOLDER_USER, IS_DESKTOP } from '../../../config/desktop';
 
 interface AuthState {
   user: User | null;
@@ -17,9 +18,9 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      user: null,
+      user: IS_DESKTOP ? { ...DESKTOP_PLACEHOLDER_USER } : null,
       tokens: null,
-      isAuthenticated: false,
+      isAuthenticated: IS_DESKTOP,
 
       setCredentials: (user, tokens) =>
         set({ user, tokens, isAuthenticated: true }),
@@ -27,8 +28,9 @@ export const useAuthStore = create<AuthState>()(
       setTokens: (tokens) => set({ tokens }),
 
 
+      // Desktop mode has a single permanent local user: there is nothing to leave.
       logout: () => 
-        set({ user: null, tokens: null, isAuthenticated: false }),
+        IS_DESKTOP ? undefined : set({ user: null, tokens: null, isAuthenticated: false }),
     }),
     {
       name: 'auth-storage', // Guarda sesión automáticamente en localStorage

@@ -3,6 +3,7 @@ import { Button, cn } from '../components/ui';
 import { StudyspaceNav } from '../components/StudyspaceNav';
 import { useAuthStore } from '../features/auth/store/authStore';
 import { useThemeStore } from '../store/themeStore';
+import { IS_DESKTOP } from '../config/desktop';
 
 const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -47,11 +48,13 @@ export const AppLayout = () => {
                 Profile
               </Button>
             </li>
-            <li>
-              <Button variant="secondary" size="sm" onClick={handleLogout}>
-                Log Out
-              </Button>
-            </li>
+            {!IS_DESKTOP && (
+              <li>
+                <Button variant="secondary" size="sm" onClick={handleLogout}>
+                  Log Out
+                </Button>
+              </li>
+            )}
           </ul>
         </nav>
       </header>

@@ -9,6 +9,7 @@ import {
 } from '../../../components/ui';
 import { getApiErrorMessage } from '../../../lib/apiError';
 import { useAuthStore } from '../../auth/store/authStore';
+import { IS_DESKTOP } from '../../../config/desktop';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { ProfileForm } from '../components/ProfileForm';
 import { useProfile } from '../hooks/useProfile';
@@ -77,16 +78,20 @@ export const ProfilePage = () => {
           into a different user — signing out and back in without a reload. */}
       <ProfileForm key={user.id} user={user} />
 
-      <Divider />
+      {!IS_DESKTOP && (
+        <>
+          <Divider />
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-sm uppercase tracking-[0.18em] text-ink">Session</h2>
-        <div>
-          <Button variant="secondary" size="sm" onClick={handleLogout}>
-            Log out
-          </Button>
-        </div>
-      </section>
+          <section className="flex flex-col gap-3">
+            <h2 className="font-heading text-sm uppercase tracking-[0.18em] text-ink">Session</h2>
+            <div>
+              <Button variant="secondary" size="sm" onClick={handleLogout}>
+                Log out
+              </Button>
+            </div>
+          </section>
+        </>
+      )}
     </article>
   );
 };

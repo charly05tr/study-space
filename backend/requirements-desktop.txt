@@ -1,0 +1,7 @@
+# Desktop mode (single-user, one process, no Docker/Postgres/Redis).
+# Install into a venv:  python -m venv .venv && .venv\Scripts\pip install -r requirements-desktop.txt
+-r requirements.txt
+whitenoise>=6.9
+pywebview>=5.3
+apscheduler>=3.10,<4
+pywin32>=306; sys_platform == "win32"

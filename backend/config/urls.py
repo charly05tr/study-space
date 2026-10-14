@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.views.generic import TemplateView
 from django.urls import path, include
@@ -50,4 +51,5 @@ urlpatterns = [
     path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]                                                                                               
 
-urlpatterns += [path('silk/', include('silk.urls', namespace='silk'))]
+if 'silk' in settings.INSTALLED_APPS:
+    urlpatterns += [path('silk/', include('silk.urls', namespace='silk'))]

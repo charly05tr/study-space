@@ -1,6 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notesApi } from '../api/notes.api';
-import type { NoteDocument, SaveStatus } from '../types';
+import type { NoteDetail, NoteDocument, SaveStatus } from '../types';
+import { noteQueryKey } from './useNote';
 
 const DEBOUNCE_MS = 1000;
 
@@ -22,6 +24,7 @@ interface UseNoteAutosaveOptions {
 export const useNoteAutosave = (noteId: number, options: UseNoteAutosaveOptions = {}) => {
   const { save, delayMs = DEBOUNCE_MS } = options;
 
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<SaveStatus>('saved');
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,6 +71,13 @@ export const useNoteAutosave = (noteId: number, options: UseNoteAutosaveOptions 
         // flight and owns the status.
         if (requestId !== latestRequest.current) return;
         lastSaved.current = serialized;
+        // `useNote` is pinned with `staleTime: Infinity`, so the cache is the
+        // only copy a remount reads. Without this, reopening the note would
+        // hand the editor the body it was loaded with, not what was saved.
+        // After the stale guard, so an older response cannot overwrite it.
+        queryClient.setQueryData<NoteDetail>(noteQueryKey(noteId), (current) =>
+          current ? { ...current, content: document } : current,
+        );
         if (mounted.current) setStatus('saved');
       })
       .catch(() => {
@@ -77,7 +87,7 @@ export const useNoteAutosave = (noteId: number, options: UseNoteAutosaveOptions 
         pending.current = document;
         if (mounted.current) setStatus('error');
       });
-  }, [noteId]);
+  }, [noteId, queryClient]);
 
   const scheduleSave = useCallback(
     (document: NoteDocument) => {

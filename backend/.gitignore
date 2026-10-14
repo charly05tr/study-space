@@ -9,3 +9,9 @@ firebase-credentials.json
 deploy_key
 deploy_key.pub
 .vscode
+
+# Desktop mode
+.venv/
+# Desktop build outputs
+build/
+dist/
