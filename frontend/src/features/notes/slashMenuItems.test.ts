@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SLASH_ITEMS, filterSlashItems } from './slashMenuItems';
+import { SLASH_ITEMS, filterAiItems, filterSlashItems } from './slashMenuItems';
 
 const titles = (query: string) => filterSlashItems(query).map((item) => item.title);
 
@@ -75,5 +75,17 @@ describe('filterSlashItems', () => {
     expect(titles('h')).toEqual(titles('h').slice().sort(
       (a, b) => SLASH_ITEMS.findIndex((i) => i.title === a) - SLASH_ITEMS.findIndex((i) => i.title === b),
     ));
+  });
+});
+
+describe('filterAiItems', () => {
+  it('offers the AI review for English and Spanish search terms', () => {
+    for (const query of ['', 'ai', 'review', 'grammar', 'revisar', 'corregir']) {
+      expect(filterAiItems(query).map((item) => item.key)).toEqual(['ai-review']);
+    }
+  });
+
+  it('stays out of the way of other queries', () => {
+    expect(filterAiItems('heading')).toEqual([]);
   });
 });

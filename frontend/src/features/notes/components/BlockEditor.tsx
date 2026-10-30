@@ -1,12 +1,14 @@
 import { NodeSelection, Selection } from '@tiptap/pm/state';
+import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../../components/ui/cn';
 import { useStudyspaceAnnotations } from '../../annotations/hooks/useAnnotations';
 import type { Annotation } from '../../annotations/types';
 import { noteExtensions } from '../editorExtensions';
+import { WritingReviewPanel } from '../../ai/components/WritingReviewPanel';
 import { useNoteAutosave } from '../hooks/useNoteAutosave';
-import { toEditorContent } from '../noteDocument';
+import { extractPlainText, toEditorContent } from '../noteDocument';
 import { NoteEditorContext } from '../noteEditorContext';
 import { BlockLinkCommand } from '../blockLinkCommand';
 import { SlashCommand } from '../slashCommand';
@@ -51,11 +53,34 @@ export const BlockEditor = ({
   // picker has to appear.
   const openAnnotationPicker = useCallback((query: string) => setPickerQuery(query), []);
 
+  // `null` while closed. The text is a snapshot taken on open: the review
+  // describes the note as it was when asked for, even if typing continues.
+  // `seq` is bumped on every open and used as the panel's `key`: re-running
+  // the review while it is open remounts the panel, so it starts a fresh
+  // request, and a response still in flight for the previous panel lands on an
+  // unmounted observer and is ignored. `noteId` ties the review to its note.
+  const [reviewState, setReviewState] = useState<{
+    noteId: number;
+    text: string;
+    seq: number;
+  } | null>(null);
+  const review = reviewState?.noteId === noteId ? reviewState : null;
+  const editorRef = useRef<Editor | null>(null);
+  const openAiReview = useCallback(
+    () =>
+      setReviewState((previous) => ({
+        noteId,
+        text: extractPlainText(editorRef.current?.getJSON()),
+        seq: (previous?.seq ?? 0) + 1,
+      })),
+    [noteId],
+  );
+
   // Reaches the `/` menu through the portal Tiptap renders it in, so the menu
   // can load its own citations instead of having them threaded in as options.
   const editorContext = useMemo(
-    () => ({ studyspaceId, openAnnotationPicker }),
-    [studyspaceId, openAnnotationPicker],
+    () => ({ studyspaceId, openAnnotationPicker, openAiReview }),
+    [studyspaceId, openAnnotationPicker, openAiReview],
   );
 
   // Shares react-query's cache with the menu's own hook, so opening the picker
@@ -141,6 +166,10 @@ export const BlockEditor = ({
     [noteId],
   );
 
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
   if (!editor) return null;
 
   return (
@@ -175,6 +204,14 @@ export const BlockEditor = ({
                 .insertContent({ type: 'annotation', attrs: annotationToNodeAttrs(annotation) })
                 .run();
             }}
+          />
+        )}
+
+        {review && (
+          <WritingReviewPanel
+            key={review.seq}
+            text={review.text}
+            onClose={() => setReviewState(null)}
           />
         )}
       </div>

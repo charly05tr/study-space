@@ -7,6 +7,7 @@ import { DEFAULT_TABLE } from './tableNodes';
 /** Section headings inside the menu. Shown only when the group changes. */
 export const BLOCKS_GROUP = 'Blocks';
 export const ANNOTATIONS_GROUP = 'From your sources';
+export const ASSISTANT_GROUP = 'Assistant';
 
 /**
  * How many annotations the menu offers at once. A studyspace accumulates
@@ -145,6 +146,23 @@ const BLOCK_ITEMS: Omit<SlashItem, 'key' | 'group'>[] = [
   },
 ];
 
+/** Identifies the row that opens the AI review panel instead of inserting. */
+export const AI_REVIEW_KEY = 'ai-review';
+
+/**
+ * Kept out of `SLASH_ITEMS` because it is an action, not a block: it inserts
+ * nothing and never changes the note. Like the annotation search row, the menu
+ * reacts to its key after `run` has cleared the typed query.
+ */
+const AI_REVIEW_ITEM: SlashItem = {
+  key: AI_REVIEW_KEY,
+  group: ASSISTANT_GROUP,
+  title: 'Review with AI',
+  hint: 'Grammar, vocabulary & topic feedback',
+  keywords: ['ai', 'review', 'feedback', 'grammar', 'revisar', 'corregir'],
+  run: (chain) => chain,
+};
+
 /** Titles are unique in the catalogue, so they double as stable keys. */
 export const SLASH_ITEMS: SlashItem[] = BLOCK_ITEMS.map((item) => ({
   ...item,
@@ -233,6 +251,13 @@ export const filterSlashItems = (query: string): SlashItem[] => {
   if (!needle) return SLASH_ITEMS;
 
   return SLASH_ITEMS.filter((item) => matches([item.title, ...item.keywords], needle));
+};
+
+export const filterAiItems = (query: string): SlashItem[] => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [AI_REVIEW_ITEM];
+
+  return matches([AI_REVIEW_ITEM.title, ...AI_REVIEW_ITEM.keywords], needle) ? [AI_REVIEW_ITEM] : [];
 };
 
 /** Newest first. ISO timestamps compare correctly as plain strings. */

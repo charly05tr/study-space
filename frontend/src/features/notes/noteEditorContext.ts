@@ -10,6 +10,8 @@ export interface NoteEditorContextValue {
    * would bury the blocks it also has to show.
    */
   openAnnotationPicker: (query: string) => void;
+  /** Opens the AI writing review for the note as it is right now. */
+  openAiReview: () => void;
 }
 
 /**

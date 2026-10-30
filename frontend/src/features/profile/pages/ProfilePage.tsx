@@ -8,6 +8,7 @@ import {
   SkeletonText,
 } from '../../../components/ui';
 import { getApiErrorMessage } from '../../../lib/apiError';
+import { AiSettings } from '../../ai/components/AiSettings';
 import { useAuthStore } from '../../auth/store/authStore';
 import { IS_DESKTOP } from '../../../config/desktop';
 import { ProfileAvatar } from '../components/ProfileAvatar';
@@ -77,6 +78,13 @@ export const ProfilePage = () => {
       {/* Keyed on the account so the fields re-seed if it is ever refetched
           into a different user — signing out and back in without a reload. */}
       <ProfileForm key={user.id} user={user} />
+
+      <Divider />
+
+      <section className="flex flex-col gap-3">
+        <h2 className="font-heading text-sm uppercase tracking-[0.18em] text-ink">AI assistant</h2>
+        <AiSettings />
+      </section>
 
       {!IS_DESKTOP && (
         <>

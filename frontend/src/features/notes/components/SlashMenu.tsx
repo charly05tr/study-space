@@ -13,8 +13,10 @@ import { useStudyspaceAnnotations } from '../../annotations/hooks/useAnnotations
 import { NoteEditorContext } from '../noteEditorContext';
 import {
   ANNOTATIONS_GROUP,
+  AI_REVIEW_KEY,
   ANNOTATION_SEARCH_KEY,
   createAnnotationSearchItem,
+  filterAiItems,
   filterAnnotationItems,
   type SlashItem,
 } from '../slashMenuItems';
@@ -52,6 +54,7 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
       return {
         items: [
           ...blocks,
+          ...filterAiItems(query),
           ...matched.items,
           // Offered whenever the studyspace has anything at all, so `/annotation`
           // finds it by name even when the text matches nothing.
@@ -65,6 +68,7 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
     }, [blocks, query, annotationsQuery.data]);
 
     const openPicker = noteEditor?.openAnnotationPicker;
+    const openAiReview = noteEditor?.openAiReview;
 
     const select = useCallback(
       (item: SlashItem) => {
@@ -72,8 +76,9 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
         // search row simply inserts nothing on its way out.
         command(item);
         if (item.key === ANNOTATION_SEARCH_KEY) openPicker?.(query);
+        if (item.key === AI_REVIEW_KEY) openAiReview?.();
       },
-      [command, openPicker, query],
+      [command, openPicker, openAiReview, query],
     );
 
     // Every keystroke narrows the list, so the previous index can point past the

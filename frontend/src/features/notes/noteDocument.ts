@@ -40,3 +40,39 @@ export const toEditorContent = (
  */
 export const seedTemplate = (document: NoteDocument): NoteDocument =>
   generateUniqueIds(document, noteExtensions);
+
+/**
+ * Nodes whose content is not the author's own prose: a quoted source, a
+ * formula, code. Reviewing them as writing would grade someone else's words.
+ */
+const NON_PROSE_NODES = new Set(['annotation', 'codeBlock', 'blockLink', 'inlineMath', 'blockMath']);
+
+/**
+ * The readable text of a note, one line per paragraph or heading.
+ *
+ * Walks the stored JSON rather than asking an editor, so it works on any saved
+ * document. Block boundaries become newlines because the text is read by a
+ * model that needs to see where one paragraph ends.
+ */
+export const extractPlainText = (content: NoteDocument | null | undefined): string => {
+  const lines: string[] = [];
+
+  const visit = (node: NoteDocument) => {
+    if (node.type && NON_PROSE_NODES.has(node.type)) return;
+
+    if (node.type === 'paragraph' || node.type === 'heading') {
+      // Inline atoms (math, block links) have no `text`, so they drop out here.
+      const line = (node.content ?? [])
+        .map((child) => (child.type === 'hardBreak' ? '\n' : (child.text ?? '')))
+        .join('')
+        .trim();
+      if (line) lines.push(line);
+      return;
+    }
+
+    for (const child of node.content ?? []) visit(child);
+  };
+
+  if (content && typeof content === 'object') visit(content);
+  return lines.join('\n');
+};
