@@ -479,15 +479,19 @@ REVIEW_SCORE_MAX = 10
 REVIEW_MAX_ITEMS = 50
 REVIEW_MAX_TEXT = 2000
 REVIEW_MAX_SUMMARY = 4000
+REVIEW_MAX_FOLLOW_UP_STEPS = 10
+REVIEW_MAX_FOLLOW_UP_STEP = 1000
 
 
 class NoteReviewSerializer(serializers.ModelSerializer):
     # Optional: when absent it is taken from `result.language`.
     language = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    # So the reviews page can name the note without a request per row.
+    note_title = serializers.CharField(source='note.title', read_only=True)
 
     class Meta:
         model = NoteReview
-        fields = ['id', 'note', 'result', 'model', 'language', 'created_at']
+        fields = ['id', 'note', 'note_title', 'result', 'model', 'language', 'created_at']
         read_only_fields = ['id', 'created_at']
 
     @staticmethod
@@ -538,12 +542,31 @@ class NoteReviewSerializer(serializers.ModelSerializer):
                 for key in ('quote', 'problem', 'suggestion')
             })
 
-        return {
+        clean = {
             'language': self._text(value.get('language', ''), "Language", 50),
             'scores': clean_scores,
             'strengths': [self._text(item, "Strength") for item in strengths],
             'issues': clean_issues,
             'summary': self._text(value.get('summary'), "Summary", REVIEW_MAX_SUMMARY),
+        }
+
+        # Optional: reviews saved before the follow-up existed do not have it.
+        follow_up = value.get('followUp')
+        if follow_up is not None:
+            clean['followUp'] = self._clean_follow_up(follow_up)
+        return clean
+
+    def _clean_follow_up(self, follow_up):
+        if not isinstance(follow_up, dict):
+            raise serializers.ValidationError("The follow-up must be an object.")
+        steps = follow_up.get('steps')
+        if not isinstance(steps, list) or len(steps) > REVIEW_MAX_FOLLOW_UP_STEPS:
+            raise serializers.ValidationError("Follow-up steps must be a short list of strings.")
+        return {
+            'overview': self._text(follow_up.get('overview'), "Follow-up overview"),
+            'steps': [
+                self._text(step, "Follow-up step", REVIEW_MAX_FOLLOW_UP_STEP) for step in steps
+            ],
         }
 
     def validate(self, attrs):

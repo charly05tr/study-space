@@ -14,6 +14,12 @@ export const noteReviewsApi = {
     return response.data;
   },
 
+  /** Newest first. Unpaginated, like the per-note list. */
+  listByStudyspace: async (studyspaceId: number): Promise<SavedWritingReview[]> => {
+    const response = await axios.get(`${BASE_URL}/`, { params: { studyspace: studyspaceId } });
+    return response.data;
+  },
+
   create: async (payload: SaveWritingReviewPayload): Promise<SavedWritingReview> => {
     const response = await axios.post(`${BASE_URL}/`, payload);
     return response.data;

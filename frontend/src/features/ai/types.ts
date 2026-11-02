@@ -16,6 +16,12 @@ export interface WritingIssue {
   suggestion: string;
 }
 
+/** Forward-looking guidance on writing quality, beyond the issues listed. */
+export interface WritingFollowUp {
+  overview: string;
+  steps: string[];
+}
+
 export interface WritingReview {
   /** Language of the note and of the feedback, as named by the model. */
   language: string;
@@ -23,6 +29,8 @@ export interface WritingReview {
   strengths: string[];
   issues: WritingIssue[];
   summary: string;
+  /** Absent on reviews saved before it existed. */
+  followUp?: WritingFollowUp;
 }
 
 /** Recursively optional: what a review looks like while it is still streaming in. */
@@ -38,6 +46,8 @@ export type PartialWritingReview = DeepPartial<WritingReview>;
 export interface SavedWritingReview {
   id: number;
   note: number;
+  /** Read-only, so a list across notes can name each one. */
+  note_title: string;
   result: WritingReview;
   /** Gemini model id the review was produced with. */
   model: string;

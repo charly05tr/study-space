@@ -40,6 +40,7 @@ const initialAuth = useAuthStore.getState();
 const saved = (id: number): SavedWritingReview => ({
   id,
   note: 1,
+  note_title: 'Virtual memory',
   result: finalReview,
   model: 'models/m',
   language: 'English',

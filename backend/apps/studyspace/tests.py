@@ -1579,6 +1579,66 @@ class NoteReviewApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([r['id'] for r in response.json()], [second['id'], first['id']])
 
+    def test_listing_can_be_filtered_by_studyspace(self):
+        from apps.studyspace.models import Note, Studyspace
+
+        other_space = Studyspace.objects.create(title="Networks", description="", user=self.user)
+        elsewhere = Note.objects.create(title="TCP", studyspace=other_space)
+        kept = self._create().json()
+        self._create(note=elsewhere)
+
+        response = self.client.get(self.URL, {'studyspace': self.studyspace.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([r['id'] for r in response.json()], [kept['id']])
+
+    def test_foreign_and_missing_studyspace_filters_look_the_same(self):
+        from apps.studyspace.models import Note, NoteReview, Studyspace
+
+        space = Studyspace.objects.create(title="Theirs", description="", user=self.intruder)
+        foreign = Note.objects.create(title="Private", studyspace=space)
+        NoteReview.objects.create(note=foreign, result=self.RESULT, model='m')
+
+        for studyspace_id in (space.pk, 999999):
+            response = self.client.get(self.URL, {'studyspace': studyspace_id})
+            self.assertEqual((response.status_code, response.json()), (200, []))
+
+    def test_reviews_carry_the_note_title_without_a_query_per_row(self):
+        from apps.studyspace.models import Note
+
+        self._create()
+        self._create(note=Note.objects.create(title="Scheduling", studyspace=self.studyspace))
+
+        with self.assertNumQueries(1):
+            response = self.client.get(self.URL, {'studyspace': self.studyspace.pk})
+        self.assertEqual(
+            sorted(r['note_title'] for r in response.json()), ["Scheduling", "Virtual memory"]
+        )
+
+    def test_follow_up_is_kept_and_unknown_subkeys_are_stripped(self):
+        follow_up = {'overview': 'Tighten it.', 'steps': ['Cut filler', 'Lead with the claim'], 'x': 1}
+        body = self._create(result={**self.RESULT, 'followUp': follow_up}).json()
+        self.assertEqual(
+            body['result']['followUp'],
+            {'overview': 'Tighten it.', 'steps': ['Cut filler', 'Lead with the claim']},
+        )
+
+    def test_a_result_without_follow_up_still_validates(self):
+        body = self._create().json()
+        self.assertNotIn('followUp', body['result'])
+
+    def test_malformed_or_oversized_follow_ups_are_refused(self):
+        bad = [
+            'text',
+            {'overview': 'x', 'steps': 'not a list'},
+            {'overview': 'x' * 2001, 'steps': []},
+            {'overview': 'x', 'steps': ['s'] * 11},
+            {'overview': 'x', 'steps': ['s' * 1001]},
+            {'overview': 'x', 'steps': [3]},
+        ]
+        for follow_up in bad:
+            result = {**self.RESULT, 'followUp': follow_up}
+            self.assertEqual(self._create(result=result).status_code, 400, follow_up)
+
     def test_a_review_can_be_deleted(self):
         from apps.studyspace.models import NoteReview
 

@@ -4,14 +4,17 @@ import { Button, ConfirmButton, ErrorState, Spinner } from '../../../components/
 import { getAiErrorMessage } from '../api/gemini.api';
 import { useDeleteNoteReview, useNoteReviews } from '../hooks/useNoteReviews';
 import { useWritingReview } from '../hooks/useWritingReview';
-import {
-  MAX_REVIEW_CHARS,
-  MIN_REVIEW_CHARS,
-  SCORE_MAX,
-  isReviewTruncated,
-} from '../prompts/writingReview';
+import { formatReviewDate as formatDate } from '../formatReviewDate';
+import { useDockResize } from '../hooks/useDockResize';
+import { useDraggableResizable } from '../hooks/useDraggableResizable';
+import { useViewportSize } from '../hooks/useViewportSize';
+import { NARROW_BREAKPOINT, defaultFloatingRect } from '../panelGeometry';
+import { MAX_REVIEW_CHARS, MIN_REVIEW_CHARS, isReviewTruncated } from '../prompts/writingReview';
 import { useAiSettingsStore } from '../store/aiSettingsStore';
-import type { PartialWritingReview, SavedWritingReview, WritingReview } from '../types';
+import { useReviewPanelStore } from '../store/reviewPanelStore';
+import type { SavedWritingReview } from '../types';
+import { Message, ReviewResult, sectionTitle } from './ReviewResult';
+import { ResizeEdges } from './ResizeEdges';
 
 interface WritingReviewPanelProps {
   /** The note's prose, snapshotted when the panel opened. */
@@ -20,14 +23,6 @@ interface WritingReviewPanelProps {
   noteId: number;
   onClose: () => void;
 }
-
-const SCORE_LABELS: { key: keyof WritingReview['scores']; label: string }[] = [
-  { key: 'grammar', label: 'Grammar' },
-  { key: 'vocabulary', label: 'Vocabulary' },
-  { key: 'topicMastery', label: 'Topic mastery' },
-];
-
-const sectionTitle = 'font-heading text-xs uppercase tracking-[0.18em] text-muted';
 
 /**
  * Read-only feedback on a note. Nothing here writes to the editor: suggestions
@@ -43,6 +38,29 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
   const opened = history.data?.find((item) => item.id === openedId) ?? null;
   // Newest first, per the API.
   const latest = history.data?.[0] ?? null;
+
+  // Where the panel sits. Below `sm` it is always a full-width drawer.
+  const viewport = useViewportSize();
+  const narrow = viewport.width < NARROW_BREAKPOINT;
+  const { mode, dockedWidth, floatingRect, setMode, setDockedWidth, setFloatingRect } =
+    useReviewPanelStore();
+  const floating = mode === 'floating' && !narrow;
+  const dock = useDockResize({
+    width: dockedWidth,
+    viewportWidth: viewport.width,
+    onCommit: setDockedWidth,
+  });
+  const frame = useDraggableResizable({
+    rect: floatingRect ?? defaultFloatingRect(viewport),
+    viewport,
+    onCommit: setFloatingRect,
+  });
+
+  const toggleMode = () => {
+    if (floating) return setMode('docked');
+    if (!floatingRect) setFloatingRect(defaultFloatingRect(viewport));
+    setMode('floating');
+  };
 
   const trimmed = text.trim();
   const tooShort = trimmed.length < MIN_REVIEW_CHARS;
@@ -88,15 +106,53 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
     <aside
       role="dialog"
       aria-label="AI writing review"
-      // A drawer, not a modal: the note stays visible beside it so every quoted
-      // passage can be found and compared without closing anything.
-      className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-rule bg-page shadow-lg"
+      data-mode={floating ? 'floating' : 'docked'}
+      // A drawer or a floating window, never a modal: there is no backdrop, so
+      // the note stays visible and usable and every quoted passage can be
+      // found and compared without closing anything.
+      className={
+        floating
+          ? 'fixed z-50 flex flex-col border border-rule bg-page shadow-lg'
+          : 'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-rule bg-page shadow-lg'
+      }
+      style={
+        floating
+          ? { left: frame.rect.x, top: frame.rect.y, width: frame.rect.width, height: frame.rect.height }
+          : narrow
+            ? undefined
+            : { width: dock.width }
+      }
     >
-      <header className="flex items-center justify-between gap-3 border-b border-rule px-5 py-3">
+      {floating && <ResizeEdges edgeProps={frame.edgeProps} />}
+      {!floating && !narrow && (
+        <div
+          {...dock.handleProps}
+          className="absolute inset-y-0 left-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize touch-none select-none transition-colors hover:bg-primary/40 focus-visible:bg-primary/60 focus-visible:outline-none"
+        />
+      )}
+      <header
+        {...(floating ? frame.moveProps : {})}
+        className={`flex items-center justify-between gap-3 border-b border-rule px-5 py-3 ${
+          floating ? 'cursor-move touch-none select-none' : ''
+        }`}
+      >
         <h2 className="font-heading text-sm uppercase tracking-[0.18em] text-ink">AI review</h2>
-        <Button variant="quiet" size="sm" onClick={onClose} aria-label="Close review">
-          Close
-        </Button>
+        <div className="flex items-center gap-1">
+          {!narrow && (
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={toggleMode}
+              aria-label={floating ? 'Dock review panel' : 'Float review panel'}
+              aria-pressed={floating}
+            >
+              {floating ? 'Dock' : 'Float'}
+            </Button>
+          )}
+          <Button variant="quiet" size="sm" onClick={onClose} aria-label="Close review">
+            Close
+          </Button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -223,9 +279,6 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
   );
 };
 
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-
 interface ReviewHistoryProps {
   reviews: SavedWritingReview[];
   openedId: number | null;
@@ -266,99 +319,3 @@ const ReviewHistory = ({ reviews, openedId, deleting, onOpen, onDelete }: Review
     </ul>
   </section>
 );
-
-const Message = ({ children }: { children: React.ReactNode }) => (
-  <p className="text-sm leading-relaxed text-muted">{children}</p>
-);
-
-const isText = (value: unknown): value is string => typeof value === 'string' && value !== '';
-
-interface ReviewResultProps {
-  /** Partial while streaming; every field is guarded because any may be missing. */
-  review: PartialWritingReview;
-  streaming?: boolean;
-}
-
-const ReviewResult = ({ review, streaming = false }: ReviewResultProps) => {
-  const scores = SCORE_LABELS.flatMap(({ key, label }) => {
-    const value = review.scores?.[key];
-    return typeof value === 'number' ? [{ key, label, value }] : [];
-  });
-  const strengths = Array.isArray(review.strengths) ? review.strengths.filter(isText) : [];
-  const issues = Array.isArray(review.issues)
-    ? review.issues.filter((issue) => typeof issue === 'object' && issue !== null)
-    : [];
-
-  return (
-    <div className="flex flex-col gap-7">
-      {scores.length > 0 && (
-        <section className="flex flex-col gap-3" aria-label="Scores">
-          <h3 className={sectionTitle}>Scores</h3>
-          <dl className="flex flex-col gap-3">
-            {scores.map(({ key, label, value }) => (
-              <div key={key} className="flex flex-col gap-1">
-                <div className="flex items-baseline justify-between">
-                  <dt className="font-heading text-sm text-ink">{label}</dt>
-                  <dd className="font-heading text-sm text-ink">
-                    {value}
-                    <span className="text-muted"> / {SCORE_MAX}</span>
-                  </dd>
-                </div>
-                <div className="h-1 bg-rule" aria-hidden>
-                  <div
-                    className="h-full bg-primary"
-                    style={{ width: `${(Math.min(Math.max(value, 0), SCORE_MAX) / SCORE_MAX) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
-
-      {isText(review.summary) && (
-        <section className="flex flex-col gap-2">
-          <h3 className={sectionTitle}>Summary</h3>
-          <p className="text-sm leading-relaxed text-ink">{review.summary}</p>
-        </section>
-      )}
-
-      {strengths.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h3 className={sectionTitle}>Strengths</h3>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink">
-            {strengths.map((strength, index) => (
-              <li key={index}>{strength}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {(!streaming || issues.length > 0) && (
-        <section className="flex flex-col gap-3">
-          <h3 className={sectionTitle}>Issues ({issues.length})</h3>
-          {issues.length === 0 ? (
-            <Message>Nothing to fix. Nice work.</Message>
-          ) : (
-            <ul className="flex flex-col gap-4">
-              {issues.map((issue, index) => (
-                <li key={index} className="flex flex-col gap-1.5 border-l-2 border-primary pl-3">
-                  {isText(issue.quote) && <p className="text-sm text-ink italic">“{issue.quote}”</p>}
-                  {isText(issue.problem) && <p className="text-sm text-muted">{issue.problem}</p>}
-                  {isText(issue.suggestion) && (
-                    <p className="text-sm text-ink">
-                      <span className="font-heading text-[0.65rem] uppercase tracking-[0.14em] text-muted">
-                        Try{' '}
-                      </span>
-                      {issue.suggestion}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-    </div>
-  );
-};

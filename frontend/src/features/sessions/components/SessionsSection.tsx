@@ -49,6 +49,12 @@ export const SessionsSection = ({ studyspaceId }: SessionsSectionProps) => {
           >
             Plan
           </Link>
+          <Link
+            to={`/studyspace/${studyspaceId}/reviews`}
+            className="rounded-xs border border-transparent px-3 py-1.5 font-heading text-xs uppercase tracking-[0.14em] text-muted transition-colors duration-150 hover:border-rule hover:text-ink"
+          >
+            Reviews
+          </Link>
           {total > 0 && (
             <Link
               to={`/studyspace/${studyspaceId}/sessions`}

@@ -18,6 +18,7 @@ import { StudyspaceDetailPage } from '../features/studyspaces/pages/StudyspaceDe
 import { ReaderPage } from '../features/reader/pages/ReaderPage';
 import { SessionsPage } from '../features/sessions/pages/SessionsPage';
 import { PlanPage } from '../features/planning/pages/PlanPage';
+import { ReviewsPage } from '../features/ai/pages/ReviewsPage';
 import { ProfilePage } from '../features/profile/pages/ProfilePage';
 import { NotePage } from '../features/notes/pages/NotePage';
 import { LazyGraphPage } from './LazyGraphPage';
@@ -70,6 +71,8 @@ export const router = createBrowserRouter([
           // su propia ruta y no como seccion del detalle. Anidado como el mapa
           // para que el sidebar siga mostrando este studyspace.
           { path: '/studyspace/:studyspaceId/plan', element: <PlanPage /> },
+          // Nested like the plan: the sidebar keeps showing this studyspace.
+          { path: '/studyspace/:studyspaceId/reviews', element: <ReviewsPage /> },
           // El editor es escritura, no lectura: va en AppLayout como el hub, no
           // en ReaderLayout.
           { path: '/note/:noteId', element: <NotePage /> },

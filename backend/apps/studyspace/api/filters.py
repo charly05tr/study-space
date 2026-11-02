@@ -24,18 +24,20 @@ class AnnotationFilter(filters.FilterSet):
 
 
 class NoteReviewFilter(filters.FilterSet):
-    """Filters for /note-reviews/: the history panel asks per note.
+    """Filters for /note-reviews/: the history panel asks per note, the
+    reviews page per studyspace.
 
-    Filters on the raw `note_id` and not on a model choice: that would validate
-    the id against every note, so a foreign id and a missing one would answer
-    differently and leak which notes exist.
+    Filters on the raw ids and not on a model choice: that would validate the
+    id against every row, so a foreign id and a missing one would answer
+    differently and leak which notes and studyspaces exist.
     """
 
     note = filters.NumberFilter(field_name='note_id')
+    studyspace = filters.NumberFilter(field_name='note__studyspace_id')
 
     class Meta:
         model = NoteReview
-        fields = ['note']
+        fields = ['note', 'studyspace']
 
 
 class BlockFilter(filters.FilterSet):

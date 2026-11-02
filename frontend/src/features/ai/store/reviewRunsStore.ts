@@ -4,7 +4,7 @@ import { useAuthStore } from '../../auth/store/authStore';
 import { GeminiError, isAbortError, streamReviewWriting } from '../api/gemini.api';
 import { noteReviewsApi } from '../api/noteReviews.api';
 import { pickDefaultModel } from '../defaultModel';
-import { noteReviewsQueryKey } from '../hooks/useNoteReviews';
+import { noteReviewsQueryKey, studyspaceReviewsRootKey } from '../hooks/useNoteReviews';
 import { readApiKey } from '../readApiKey';
 import type { PartialWritingReview, SavedWritingReview, WritingReview } from '../types';
 import { useAiSettingsStore } from './aiSettingsStore';
@@ -96,6 +96,9 @@ export const useReviewRunsStore = create<ReviewRunsState>()((set, get) => {
     // briefly see the old list. Skipped when nothing is cached to prepend to.
     queryClient.setQueryData<SavedWritingReview[]>(key, (old) => (old ? [created, ...old] : old));
     await queryClient.invalidateQueries({ queryKey: key });
+    // The note's studyspace is not known here, and a page listing its reviews
+    // may be cached: refetch whichever is.
+    void queryClient.invalidateQueries({ queryKey: studyspaceReviewsRootKey });
     if (isCurrent()) remove(noteId);
   };
 

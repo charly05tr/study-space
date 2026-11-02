@@ -9,6 +9,8 @@ class NoteReviewService:
         return (
             NoteReview.objects
             .filter(note__studyspace__user=user)
+            # `note_title` is serialized on every row.
+            .select_related('note')
         )
 
     def create_review(self, data: dict) -> NoteReview:

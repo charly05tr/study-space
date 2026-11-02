@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_REVIEW_CHARS,
   REVIEW_SYSTEM_INSTRUCTION,
+  WRITING_REVIEW_SCHEMA,
   buildReviewPrompt,
   isReviewTruncated,
   parseWritingReview,
@@ -39,6 +40,23 @@ describe('parseWritingReview', () => {
     expect(review.issues).toEqual(valid.issues);
   });
 
+  it('parses a follow-up and leaves it out when absent', () => {
+    const followUp = { overview: 'Lead with the claim.', steps: ['Cut filler', 'Add a thesis'] };
+    expect(parseWritingReview(JSON.stringify({ ...valid, followUp })).followUp).toEqual(followUp);
+    expect(parseWritingReview(JSON.stringify(valid))).not.toHaveProperty('followUp');
+  });
+
+  it('cleans a malformed follow-up instead of failing', () => {
+    const review = parseWritingReview(
+      JSON.stringify({ ...valid, followUp: { overview: ' Tidy up. ', steps: ['ok', 3, ''] } }),
+    );
+    expect(review.followUp).toEqual({ overview: 'Tidy up.', steps: ['ok'] });
+
+    for (const followUp of ['text', null, [], { overview: '', steps: [] }, { steps: 'nope' }]) {
+      expect(parseWritingReview(JSON.stringify({ ...valid, followUp }))).not.toHaveProperty('followUp');
+    }
+  });
+
   it('throws on invalid JSON', () => {
     expect(() => parseWritingReview('{"language":')).toThrow(/not valid/);
   });
@@ -63,7 +81,26 @@ describe('buildReviewPrompt', () => {
   });
 });
 
+describe('WRITING_REVIEW_SCHEMA', () => {
+  it('requires the follow-up and generates it last', () => {
+    expect(WRITING_REVIEW_SCHEMA.required).toContain('followUp');
+    expect(WRITING_REVIEW_SCHEMA.propertyOrdering.at(-1)).toBe('followUp');
+    expect(WRITING_REVIEW_SCHEMA.properties.followUp.required).toEqual(['overview', 'steps']);
+  });
+
+  it('orders every property it declares', () => {
+    expect([...WRITING_REVIEW_SCHEMA.propertyOrdering].sort()).toEqual(
+      Object.keys(WRITING_REVIEW_SCHEMA.properties).sort(),
+    );
+  });
+});
+
 describe('REVIEW_SYSTEM_INSTRUCTION', () => {
+  it('asks for a general follow-up that does not repeat the issues', () => {
+    expect(REVIEW_SYSTEM_INSTRUCTION).toMatch(/followUp/);
+    expect(REVIEW_SYSTEM_INSTRUCTION).toMatch(/do not repeat/i);
+  });
+
   it('asks for the same language and treats the note as untrusted', () => {
     expect(REVIEW_SYSTEM_INSTRUCTION).toMatch(/same language/);
     expect(REVIEW_SYSTEM_INSTRUCTION).toMatch(/untrusted/);
