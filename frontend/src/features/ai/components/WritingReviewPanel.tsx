@@ -35,31 +35,46 @@ const sectionTitle = 'font-heading text-xs uppercase tracking-[0.18em] text-mute
  */
 export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanelProps) => {
   const isConnected = useAiSettingsStore((state) => state.encryptedKey !== null);
-  const { review, start, partial, saveFailed } = useWritingReview(noteId);
+  const { run, start, cancel, dismiss, retrySave } = useWritingReview(noteId);
   const history = useNoteReviews(noteId);
   const deleteReview = useDeleteNoteReview(noteId);
-  // A saved review the user opened from the history; null shows the live one.
+  // A saved review the user opened from the history; null shows the live or latest one.
   const [openedId, setOpenedId] = useState<number | null>(null);
   const opened = history.data?.find((item) => item.id === openedId) ?? null;
+  // Newest first, per the API.
+  const latest = history.data?.[0] ?? null;
 
   const trimmed = text.trim();
   const tooShort = trimmed.length < MIN_REVIEW_CHARS;
   const canReview = isConnected && !tooShort;
   const truncated = isReviewTruncated(trimmed);
+  const running = run?.status === 'running';
+  // The store refuses dismiss and replace while a save is in flight.
+  const busy = running || run?.saving === true;
+  const unsaved = run?.status === 'done' && run.saveFailed;
 
-  // A ref guard, not `review.isIdle`: StrictMode runs this effect twice before
-  // the first mutation has had a chance to leave the idle state.
-  const started = useRef(false);
+  const startReview = () => {
+    setOpenedId(null);
+    start(noteId, trimmed);
+  };
+
+  // History first: a note that already has reviews shows the latest one and
+  // waits for "New review". Decided once per open, so cancelling or dismissing
+  // the only run does not restart it. A run already in the store (reconnect) or
+  // a failed history fetch never blocks: the first reconnects, the second falls
+  // back to auto-starting. The store ignores a start while a run is in progress,
+  // so StrictMode's double effect cannot start two.
+  // Fresh data only: with the panel closed nothing observes the query, so a
+  // reopen sees the cached list first and then refetches. Deciding on that
+  // stale list could start a second review for a run that just finished.
+  const historySettled =
+    (history.isSuccess && history.isFetchedAfterMount && !history.isFetching) || history.isError;
+  const decided = useRef(false);
   useEffect(() => {
-    if (!canReview || started.current) return;
-    started.current = true;
-    start(trimmed);
-    // Re-armed on cleanup: StrictMode's simulated unmount cancels the first run
-    // (the hook aborts on unmount), so the remount has to start it again.
-    return () => {
-      started.current = false;
-    };
-  }, [canReview, trimmed, start]);
+    if (!canReview || !historySettled || decided.current) return;
+    decided.current = true;
+    if (!run && !latest) start(noteId, trimmed);
+  }, [canReview, historySettled, run, latest, start, noteId, trimmed]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -91,6 +106,24 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
             characters were reviewed.
           </p>
         )}
+        {canReview && (historySettled || run) && (
+          <div className="mb-5 flex items-center gap-2">
+            {unsaved ? (
+              <ConfirmButton confirmLabel="Discard unsaved review?" disabled={busy} onConfirm={startReview}>
+                New review
+              </ConfirmButton>
+            ) : (
+              <Button variant="quiet" size="sm" disabled={busy} onClick={startReview}>
+                New review
+              </Button>
+            )}
+            {running && (
+              <Button variant="quiet" size="sm" onClick={() => cancel(noteId)}>
+                Cancel
+              </Button>
+            )}
+          </div>
+        )}
         {opened ? (
           <div className="flex flex-col gap-5">
             <div className="flex items-center justify-between gap-3">
@@ -103,8 +136,8 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
           </div>
         ) : !isConnected ? (
           <Message>
-            {review.isError
-              ? getAiErrorMessage(review.error)
+            {run?.status === 'error'
+              ? getAiErrorMessage(run.error)
               : 'Add your Gemini API key to get feedback on your writing.'}{' '}
             <Link to="/profile" className="text-ink underline underline-offset-2">
               Open your profile
@@ -116,14 +149,14 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
             Write a little more first. A review needs at least {MIN_REVIEW_CHARS} characters of
             text to say anything useful.
           </Message>
-        ) : review.isPending ? (
-          partial ? (
+        ) : run?.status === 'running' ? (
+          run.partial ? (
             <div className="flex flex-col gap-5">
               <div className="flex items-center gap-3 text-sm text-muted" role="status">
                 <Spinner size="sm" label={null} />
                 Writing your review…
               </div>
-              <ReviewResult review={partial} streaming />
+              <ReviewResult review={run.partial} streaming />
             </div>
           ) : (
             <div className="flex items-center gap-3 text-sm text-muted" role="status">
@@ -131,22 +164,47 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
               Reading your note…
             </div>
           )
-        ) : review.isError ? (
-          <ErrorState
-            title="Could not review this note"
-            message={getAiErrorMessage(review.error)}
-            onRetry={() => start(trimmed)}
-          />
-        ) : review.data ? (
+        ) : run?.status === 'error' ? (
+          <div className="flex flex-col items-start gap-3">
+            <ErrorState
+              title="Could not review this note"
+              message={getAiErrorMessage(run.error)}
+              onRetry={startReview}
+            />
+            <Button variant="quiet" size="sm" onClick={() => dismiss(noteId)}>
+              Dismiss
+            </Button>
+          </div>
+        ) : run?.status === 'done' && run.result ? (
           <>
-            {saveFailed && (
-              <p className="mb-5 text-sm text-muted" role="note">
-                This review could not be saved to your history.
-              </p>
+            {run.saveFailed && (
+              <div className="mb-5 flex flex-col items-start gap-2" role="note">
+                <p className="text-sm text-muted">This review could not be saved to your history.</p>
+                <div className="flex items-center gap-2">
+                  <Button variant="quiet" size="sm" onClick={() => retrySave(noteId)}>
+                    Retry save
+                  </Button>
+                  <Button variant="quiet" size="sm" onClick={() => dismiss(noteId)}>
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
             )}
-            <ReviewResult review={review.data} />
+            <ReviewResult review={run.result} />
           </>
-        ) : null}
+        ) : latest ? (
+          <div className="flex flex-col gap-5">
+            <p className="text-sm text-muted">Latest review from {formatDate(latest.created_at)}</p>
+            <ReviewResult review={latest.result} />
+          </div>
+        ) : history.isPending ? (
+          <div className="flex items-center gap-3 text-sm text-muted" role="status">
+            <Spinner size="sm" label={null} />
+            Loading your reviews…
+          </div>
+        ) : (
+          <Message>No review yet. Start one to get feedback on this note.</Message>
+        )}
 
         {history.data && history.data.length > 0 && (
           <ReviewHistory

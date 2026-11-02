@@ -55,10 +55,10 @@ export const BlockEditor = ({
 
   // `null` while closed. The text is a snapshot taken on open: the review
   // describes the note as it was when asked for, even if typing continues.
-  // `seq` is bumped on every open and used as the panel's `key`: re-running
-  // the review while it is open remounts the panel, so it starts a fresh
-  // request, and a response still in flight for the previous panel lands on an
-  // unmounted observer and is ignored. `noteId` ties the review to its note.
+  // `seq` is bumped on every open and used as the panel's `key`, so each open
+  // starts from a fresh snapshot. The review run itself lives in a store keyed
+  // by note, so remounting reconnects to a run in progress instead of restarting.
+  // `noteId` ties the review to its note.
   const [reviewState, setReviewState] = useState<{
     noteId: number;
     text: string;
