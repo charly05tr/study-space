@@ -11,6 +11,7 @@ from apps.studyspace.api.filters import (
     AnnotationFilter,
     BlockFilter,
     BlockLinkFilter,
+    NoteReviewFilter,
     PlannedSessionFilter,
     ReferenceFilter,
     StudySessionFilter,
@@ -22,6 +23,7 @@ from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.reference_service import ReferenceService
 from apps.studyspace.services.source_service import SourceService
 from apps.studyspace.services.annotation_service import AnnotationService
+from apps.studyspace.services.note_review_service import NoteReviewService
 from apps.studyspace.services.study_session_service import StudySessionService
 from apps.studyspace.services.planned_session_service import PlannedSessionService
 
@@ -223,6 +225,41 @@ class AnnotationViewSet(viewsets.ModelViewSet):
             raise ValidationError("La fuente no existe o no te pertenece.")
 
         serializer.instance = self.service.create_annotation(serializer.validated_data)
+
+
+class NoteReviewViewSet(
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Saved AI writing reviews. Immutable: a review is created or deleted, never edited."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = NoteReviewSerializer
+    filterset_class = NoteReviewFilter
+
+    # The history panel lists every review of one note.
+    pagination_class = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = NoteReviewService()
+        self.note_service = NoteService(image_service=get_image_service())
+
+    def get_queryset(self):
+        return self.service.get_user_reviews(user=self.request.user)
+
+    def perform_create(self, serializer):
+        # get_queryset filters reads, not writes: without this a review could
+        # be attached to another account's note by passing its id.
+        note = serializer.validated_data['note']
+        owned = self.note_service.get_user_notes(user=self.request.user)
+        if not owned.filter(pk=note.pk).exists():
+            raise ValidationError("The note does not exist or is not yours.")
+
+        serializer.instance = self.service.create_review(serializer.validated_data)
 
 
 class ReferenceViewSet(viewsets.ModelViewSet):

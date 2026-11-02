@@ -1,7 +1,9 @@
+import math
+
 from rest_framework import serializers
 from apps.studyspace.models import (
     Studyspace, Note, Source, NoteImage, Annotation, Reference, Block, BlockLink,
-    StudySession, PlannedSession,
+    StudySession, PlannedSession, NoteReview,
 )
 
 
@@ -470,3 +472,81 @@ class PlannedSessionStartSerializer(serializers.Serializer):
 
     focus_minutes = serializers.IntegerField()
     rest_minutes = serializers.IntegerField()
+
+
+# Mirrors SCORE_MAX in frontend/src/features/ai/prompts/writingReview.ts.
+REVIEW_SCORE_MAX = 10
+REVIEW_MAX_ITEMS = 50
+REVIEW_MAX_TEXT = 2000
+REVIEW_MAX_SUMMARY = 4000
+
+
+class NoteReviewSerializer(serializers.ModelSerializer):
+    # Optional: when absent it is taken from `result.language`.
+    language = serializers.CharField(max_length=50, required=False, allow_blank=True)
+
+    class Meta:
+        model = NoteReview
+        fields = ['id', 'note', 'result', 'model', 'language', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    @staticmethod
+    def _text(value, label, limit=REVIEW_MAX_TEXT):
+        if not isinstance(value, str):
+            raise serializers.ValidationError(f"{label} must be a string.")
+        if len(value) > limit:
+            raise serializers.ValidationError(f"{label} is too long.")
+        return value
+
+    def validate_result(self, value):
+        """Rebuild the review from known keys only.
+
+        The panel renders `result` as is, so it is copied field by field:
+        unknown keys are dropped and sizes are capped, instead of storing
+        whatever JSON the client sends.
+        """
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("The review must be an object.")
+
+        scores = value.get('scores')
+        if not isinstance(scores, dict):
+            raise serializers.ValidationError("The review needs a scores object.")
+        clean_scores = {}
+        for key in ('grammar', 'vocabulary', 'topicMastery'):
+            score = scores.get(key)
+            if isinstance(score, bool) or not isinstance(score, (int, float)):
+                raise serializers.ValidationError(f"Score '{key}' must be a number.")
+            if not math.isfinite(score) or not 0 <= score <= REVIEW_SCORE_MAX:
+                raise serializers.ValidationError(
+                    f"Score '{key}' must be between 0 and {REVIEW_SCORE_MAX}."
+                )
+            clean_scores[key] = score
+
+        strengths = value.get('strengths')
+        if not isinstance(strengths, list) or len(strengths) > REVIEW_MAX_ITEMS:
+            raise serializers.ValidationError("Strengths must be a short list of strings.")
+
+        issues = value.get('issues')
+        if not isinstance(issues, list) or len(issues) > REVIEW_MAX_ITEMS:
+            raise serializers.ValidationError("Issues must be a short list.")
+        clean_issues = []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                raise serializers.ValidationError("Each issue must be an object.")
+            clean_issues.append({
+                key: self._text(issue.get(key), f"Issue {key}")
+                for key in ('quote', 'problem', 'suggestion')
+            })
+
+        return {
+            'language': self._text(value.get('language', ''), "Language", 50),
+            'scores': clean_scores,
+            'strengths': [self._text(item, "Strength") for item in strengths],
+            'issues': clean_issues,
+            'summary': self._text(value.get('summary'), "Summary", REVIEW_MAX_SUMMARY),
+        }
+
+    def validate(self, attrs):
+        if not attrs.get('language'):
+            attrs['language'] = attrs['result']['language']
+        return attrs

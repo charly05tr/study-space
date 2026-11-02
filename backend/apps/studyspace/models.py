@@ -462,3 +462,26 @@ class PlannedSession(models.Model):
     def is_open(self):
         """El plan sigue en pie: ni cancelado, ni vencido, ni ya arrancado."""
         return self.status == self.Status.PLANNED
+
+class NoteReview(models.Model):
+    """A saved AI writing review of a Note.
+
+    `result` stores the review as the client received it from the model
+    (scores, strengths, issues, summary). The server never calls the model: it
+    only keeps what the client sends, so history survives across devices.
+    """
+    note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='reviews')
+
+    result = models.JSONField()
+    # Model id and language are kept apart from `result` so history can be
+    # listed and filtered without opening the JSON.
+    model = models.CharField(max_length=100)
+    language = models.CharField(max_length=50, blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f"Review of note {self.note_id} ({self.created_at:%Y-%m-%d %H:%M})"

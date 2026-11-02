@@ -24,3 +24,21 @@ export interface WritingReview {
   issues: WritingIssue[];
   summary: string;
 }
+
+/** A review the server keeps for a note, so history survives across devices. */
+export interface SavedWritingReview {
+  id: number;
+  note: number;
+  result: WritingReview;
+  /** Gemini model id the review was produced with. */
+  model: string;
+  language: string;
+  created_at: string;
+}
+
+export interface SaveWritingReviewPayload {
+  note: number;
+  result: WritingReview;
+  model: string;
+  language: string;
+}

@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, ErrorState, Spinner } from '../../../components/ui';
+import { Button, ConfirmButton, ErrorState, Spinner } from '../../../components/ui';
 import { getAiErrorMessage } from '../api/gemini.api';
+import { useDeleteNoteReview, useNoteReviews } from '../hooks/useNoteReviews';
 import { useWritingReview } from '../hooks/useWritingReview';
 import {
   MAX_REVIEW_CHARS,
@@ -10,11 +11,13 @@ import {
   isReviewTruncated,
 } from '../prompts/writingReview';
 import { useAiSettingsStore } from '../store/aiSettingsStore';
-import type { WritingReview } from '../types';
+import type { SavedWritingReview, WritingReview } from '../types';
 
 interface WritingReviewPanelProps {
   /** The note's prose, snapshotted when the panel opened. */
   text: string;
+  /** The note the review belongs to; its history is listed in the panel. */
+  noteId: number;
   onClose: () => void;
 }
 
@@ -30,9 +33,14 @@ const sectionTitle = 'font-heading text-xs uppercase tracking-[0.18em] text-mute
  * Read-only feedback on a note. Nothing here writes to the editor: suggestions
  * are shown, never applied.
  */
-export const WritingReviewPanel = ({ text, onClose }: WritingReviewPanelProps) => {
+export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanelProps) => {
   const isConnected = useAiSettingsStore((state) => state.encryptedKey !== null);
-  const review = useWritingReview();
+  const { review, saveFailed } = useWritingReview(noteId);
+  const history = useNoteReviews(noteId);
+  const deleteReview = useDeleteNoteReview(noteId);
+  // A saved review the user opened from the history; null shows the live one.
+  const [openedId, setOpenedId] = useState<number | null>(null);
+  const opened = history.data?.find((item) => item.id === openedId) ?? null;
 
   const trimmed = text.trim();
   const tooShort = trimmed.length < MIN_REVIEW_CHARS;
@@ -78,7 +86,17 @@ export const WritingReviewPanel = ({ text, onClose }: WritingReviewPanelProps) =
             characters were reviewed.
           </p>
         )}
-        {!isConnected ? (
+        {opened ? (
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-muted">Saved review from {formatDate(opened.created_at)}</p>
+              <Button variant="quiet" size="sm" onClick={() => setOpenedId(null)}>
+                Back
+              </Button>
+            </div>
+            <ReviewResult review={opened.result} />
+          </div>
+        ) : !isConnected ? (
           <Message>
             {review.isError
               ? getAiErrorMessage(review.error)
@@ -105,12 +123,76 @@ export const WritingReviewPanel = ({ text, onClose }: WritingReviewPanelProps) =
             onRetry={() => review.mutate(trimmed)}
           />
         ) : review.data ? (
-          <ReviewResult review={review.data} />
+          <>
+            {saveFailed && (
+              <p className="mb-5 text-sm text-muted" role="note">
+                This review could not be saved to your history.
+              </p>
+            )}
+            <ReviewResult review={review.data} />
+          </>
         ) : null}
+
+        {history.data && history.data.length > 0 && (
+          <ReviewHistory
+            reviews={history.data}
+            openedId={openedId}
+            deleting={deleteReview.isPending}
+            onOpen={setOpenedId}
+            onDelete={(id) => {
+              if (id === openedId) setOpenedId(null);
+              deleteReview.mutate(id);
+            }}
+          />
+        )}
       </div>
     </aside>
   );
 };
+
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+interface ReviewHistoryProps {
+  reviews: SavedWritingReview[];
+  openedId: number | null;
+  deleting: boolean;
+  onOpen: (id: number) => void;
+  onDelete: (id: number) => void;
+}
+
+const ReviewHistory = ({ reviews, openedId, deleting, onOpen, onDelete }: ReviewHistoryProps) => (
+  <section className="mt-8 flex flex-col gap-3 border-t border-rule pt-5" aria-label="Review history">
+    <h3 className={sectionTitle}>History ({reviews.length})</h3>
+    <ul className="flex flex-col gap-2">
+      {reviews.map((item) => (
+        <li key={item.id} className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => onOpen(item.id)}
+            aria-current={item.id === openedId}
+            className={`flex flex-1 flex-col gap-0.5 border-l-2 pl-3 text-left ${
+              item.id === openedId ? 'border-primary' : 'border-rule hover:border-ink'
+            }`}
+          >
+            <span className="text-sm text-ink">{formatDate(item.created_at)}</span>
+            <span className="text-xs text-muted">
+              Grammar {item.result.scores.grammar} · Vocabulary {item.result.scores.vocabulary} ·
+              Topic {item.result.scores.topicMastery}
+            </span>
+          </button>
+          <ConfirmButton
+            confirmLabel="Delete review?"
+            disabled={deleting}
+            onConfirm={() => onDelete(item.id)}
+          >
+            Delete
+          </ConfirmButton>
+        </li>
+      ))}
+    </ul>
+  </section>
+);
 
 const Message = ({ children }: { children: React.ReactNode }) => (
   <p className="text-sm leading-relaxed text-muted">{children}</p>

@@ -1471,3 +1471,150 @@ class NoteDeletionApiTests(APITestCase):
 
         self.assertEqual(self.client.delete(self._detail()).status_code, 404)
         self.assertTrue(Note.objects.filter(pk=self.note.pk).exists())
+
+
+class NoteReviewApiTests(APITestCase):
+    URL = '/api/note-reviews/'
+
+    RESULT = {
+        'language': 'en',
+        'scores': {'grammar': 8, 'vocabulary': 7, 'topicMastery': 6},
+        'strengths': ['Clear structure'],
+        'issues': [
+            {'quote': 'teh', 'problem': 'Typo', 'suggestion': 'the'},
+        ],
+        'summary': 'Solid draft.',
+    }
+
+    def setUp(self):
+        from apps.studyspace.models import Note, Studyspace
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(
+            email="lector@example.com", username="lector", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(
+            title="Operating systems", description="", user=self.user
+        )
+        self.note = Note.objects.create(title="Virtual memory", studyspace=self.studyspace)
+
+        self.intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(self.user)
+
+    def _create(self, note=None, **overrides):
+        payload = {
+            'note': (note or self.note).pk,
+            'result': self.RESULT,
+            'model': 'gemini-test',
+            'language': 'en',
+        }
+        payload.update(overrides)
+        return self.client.post(self.URL, payload, format='json')
+
+    def test_a_review_is_saved_for_the_note(self):
+        response = self._create()
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body['note'], self.note.pk)
+        self.assertEqual(body['result'], self.RESULT)
+        self.assertEqual(body['model'], 'gemini-test')
+
+    def test_a_malformed_result_is_refused(self):
+        self.assertEqual(self._create(result={'summary': 'x'}).status_code, 400)
+        broken = {**self.RESULT, 'scores': {'grammar': 'high'}}
+        self.assertEqual(self._create(result=broken).status_code, 400)
+
+    def test_unknown_keys_are_stripped(self):
+        dirty = {**self.RESULT, 'extra': 'x', 'issues': [
+            {'quote': 'a', 'problem': 'b', 'suggestion': 'c', 'evil': 1},
+        ]}
+        body = self._create(result=dirty).json()
+        self.assertEqual(body['result']['issues'], [
+            {'quote': 'a', 'problem': 'b', 'suggestion': 'c'},
+        ])
+        self.assertNotIn('extra', body['result'])
+
+    def test_oversized_results_are_refused(self):
+        too_long = {**self.RESULT, 'summary': 'x' * 4001}
+        self.assertEqual(self._create(result=too_long).status_code, 400)
+        many = {**self.RESULT, 'strengths': ['s'] * 51}
+        self.assertEqual(self._create(result=many).status_code, 400)
+
+    def test_out_of_range_scores_are_refused(self):
+        for bad in (11, -1):
+            result = {**self.RESULT, 'scores': {**self.RESULT['scores'], 'grammar': bad}}
+            self.assertEqual(self._create(result=result).status_code, 400)
+
+    def test_language_comes_from_the_result_when_missing(self):
+        payload = {'note': self.note.pk, 'result': self.RESULT, 'model': 'm'}
+        body = self.client.post(self.URL, payload, format='json').json()
+        self.assertEqual(body['language'], 'en')
+
+    def test_a_result_without_language_still_saves(self):
+        result = {k: v for k, v in self.RESULT.items() if k != 'language'}
+        response = self._create(result=result, language='')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['language'], '')
+
+    def test_foreign_and_missing_note_filters_look_the_same(self):
+        from apps.studyspace.models import Note, Studyspace
+
+        space = Studyspace.objects.create(title="Theirs", description="", user=self.intruder)
+        foreign = Note.objects.create(title="Private", studyspace=space)
+        for note_id in (foreign.pk, 999999):
+            response = self.client.get(self.URL, {'note': note_id})
+            self.assertEqual((response.status_code, response.json()), (200, []))
+
+    def test_listing_can_be_filtered_by_note_and_is_newest_first(self):
+        from apps.studyspace.models import Note
+
+        other = Note.objects.create(title="Scheduling", studyspace=self.studyspace)
+        first = self._create().json()
+        second = self._create().json()
+        self._create(note=other)
+
+        response = self.client.get(self.URL, {'note': self.note.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([r['id'] for r in response.json()], [second['id'], first['id']])
+
+    def test_a_review_can_be_deleted(self):
+        from apps.studyspace.models import NoteReview
+
+        review = self._create().json()
+        self.assertEqual(self.client.delete(f"{self.URL}{review['id']}/").status_code, 204)
+        self.assertEqual(NoteReview.objects.count(), 0)
+
+    def test_cannot_review_another_accounts_note(self):
+        from apps.studyspace.models import Note, NoteReview, Studyspace
+
+        space = Studyspace.objects.create(title="Theirs", description="", user=self.intruder)
+        foreign = Note.objects.create(title="Private", studyspace=space)
+
+        self.assertEqual(self._create(note=foreign).status_code, 400)
+        self.assertEqual(NoteReview.objects.count(), 0)
+
+    def test_another_account_cannot_list_or_delete_reviews(self):
+        from apps.studyspace.models import NoteReview
+
+        review = self._create().json()
+        self.client.force_authenticate(self.intruder)
+
+        self.assertEqual(self.client.get(self.URL).json(), [])
+        self.assertEqual(self.client.get(f"{self.URL}{review['id']}/").status_code, 404)
+        self.assertEqual(self.client.delete(f"{self.URL}{review['id']}/").status_code, 404)
+        self.assertEqual(NoteReview.objects.count(), 1)
+
+    def test_a_review_cannot_be_edited(self):
+        review = self._create().json()
+        url = f"{self.URL}{review['id']}/"
+        self.assertEqual(self.client.patch(url, {'model': 'x'}, format='json').status_code, 405)
+        self.assertEqual(self.client.put(url, {}, format='json').status_code, 405)
+
+    def test_deleting_the_note_takes_its_reviews(self):
+        from apps.studyspace.models import NoteReview
+
+        self._create()
+        self.note.delete()
+        self.assertEqual(NoteReview.objects.count(), 0)

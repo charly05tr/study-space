@@ -2,7 +2,8 @@ from django.db.models import F, Q
 from django_filters import rest_framework as filters
 
 from apps.studyspace.models import (
-    Annotation, Block, BlockLink, PlannedSession, Reference, StudySession,
+    Annotation, Block, BlockLink, NoteReview, PlannedSession, Reference,
+    StudySession,
 )
 
 
@@ -20,6 +21,21 @@ class AnnotationFilter(filters.FilterSet):
     class Meta:
         model = Annotation
         fields = ['source', 'annotation_type', 'studyspace']
+
+
+class NoteReviewFilter(filters.FilterSet):
+    """Filters for /note-reviews/: the history panel asks per note.
+
+    Filters on the raw `note_id` and not on a model choice: that would validate
+    the id against every note, so a foreign id and a missing one would answer
+    differently and leak which notes exist.
+    """
+
+    note = filters.NumberFilter(field_name='note_id')
+
+    class Meta:
+        model = NoteReview
+        fields = ['note']
 
 
 class BlockFilter(filters.FilterSet):

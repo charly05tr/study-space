@@ -211,6 +211,7 @@ export const BlockEditor = ({
           <WritingReviewPanel
             key={review.seq}
             text={review.text}
+            noteId={noteId}
             onClose={() => setReviewState(null)}
           />
         )}
