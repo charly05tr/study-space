@@ -25,6 +25,15 @@ export interface WritingReview {
   summary: string;
 }
 
+/** Recursively optional: what a review looks like while it is still streaming in. */
+export type DeepPartial<T> = T extends (infer U)[]
+  ? DeepPartial<U>[]
+  : T extends object
+    ? { [K in keyof T]?: DeepPartial<T[K]> }
+    : T;
+
+export type PartialWritingReview = DeepPartial<WritingReview>;
+
 /** A review the server keeps for a note, so history survives across devices. */
 export interface SavedWritingReview {
   id: number;

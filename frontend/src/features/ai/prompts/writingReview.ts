@@ -12,13 +12,18 @@ export const SCORE_MAX = 10;
  * Gemini's `responseSchema` is an OpenAPI subset, not full JSON Schema.
  * Constraints such as min/max are not reliably honoured, so the range is
  * stated in the prompt and enforced again in `parseWritingReview`.
+ *
+ * `propertyOrdering` fixes the order the fields are generated in, so a streamed
+ * review fills in top to bottom: scores first, the long issue list last.
  */
 export const WRITING_REVIEW_SCHEMA = {
   type: 'OBJECT',
+  propertyOrdering: ['language', 'scores', 'summary', 'strengths', 'issues'],
   properties: {
     language: { type: 'STRING' },
     scores: {
       type: 'OBJECT',
+      propertyOrdering: ['grammar', 'vocabulary', 'topicMastery'],
       properties: {
         grammar: { type: 'INTEGER' },
         vocabulary: { type: 'INTEGER' },
@@ -31,6 +36,7 @@ export const WRITING_REVIEW_SCHEMA = {
       type: 'ARRAY',
       items: {
         type: 'OBJECT',
+        propertyOrdering: ['quote', 'problem', 'suggestion'],
         properties: {
           quote: { type: 'STRING' },
           problem: { type: 'STRING' },

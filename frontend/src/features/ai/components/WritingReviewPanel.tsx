@@ -11,7 +11,7 @@ import {
   isReviewTruncated,
 } from '../prompts/writingReview';
 import { useAiSettingsStore } from '../store/aiSettingsStore';
-import type { SavedWritingReview, WritingReview } from '../types';
+import type { PartialWritingReview, SavedWritingReview, WritingReview } from '../types';
 
 interface WritingReviewPanelProps {
   /** The note's prose, snapshotted when the panel opened. */
@@ -35,7 +35,7 @@ const sectionTitle = 'font-heading text-xs uppercase tracking-[0.18em] text-mute
  */
 export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanelProps) => {
   const isConnected = useAiSettingsStore((state) => state.encryptedKey !== null);
-  const { review, saveFailed } = useWritingReview(noteId);
+  const { review, start, partial, saveFailed } = useWritingReview(noteId);
   const history = useNoteReviews(noteId);
   const deleteReview = useDeleteNoteReview(noteId);
   // A saved review the user opened from the history; null shows the live one.
@@ -53,8 +53,13 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
   useEffect(() => {
     if (!canReview || started.current) return;
     started.current = true;
-    review.mutate(trimmed);
-  }, [canReview, trimmed, review]);
+    start(trimmed);
+    // Re-armed on cleanup: StrictMode's simulated unmount cancels the first run
+    // (the hook aborts on unmount), so the remount has to start it again.
+    return () => {
+      started.current = false;
+    };
+  }, [canReview, trimmed, start]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -112,15 +117,25 @@ export const WritingReviewPanel = ({ text, noteId, onClose }: WritingReviewPanel
             text to say anything useful.
           </Message>
         ) : review.isPending ? (
-          <div className="flex items-center gap-3 text-sm text-muted" role="status">
-            <Spinner size="sm" label={null} />
-            Reading your note…
-          </div>
+          partial ? (
+            <div className="flex flex-col gap-5">
+              <div className="flex items-center gap-3 text-sm text-muted" role="status">
+                <Spinner size="sm" label={null} />
+                Writing your review…
+              </div>
+              <ReviewResult review={partial} streaming />
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 text-sm text-muted" role="status">
+              <Spinner size="sm" label={null} />
+              Reading your note…
+            </div>
+          )
         ) : review.isError ? (
           <ErrorState
             title="Could not review this note"
             message={getAiErrorMessage(review.error)}
-            onRetry={() => review.mutate(trimmed)}
+            onRetry={() => start(trimmed)}
           />
         ) : review.data ? (
           <>
@@ -198,71 +213,94 @@ const Message = ({ children }: { children: React.ReactNode }) => (
   <p className="text-sm leading-relaxed text-muted">{children}</p>
 );
 
-const ReviewResult = ({ review }: { review: WritingReview }) => (
-  <div className="flex flex-col gap-7">
-    <section className="flex flex-col gap-3" aria-label="Scores">
-      <h3 className={sectionTitle}>Scores</h3>
-      <dl className="flex flex-col gap-3">
-        {SCORE_LABELS.map(({ key, label }) => (
-          <div key={key} className="flex flex-col gap-1">
-            <div className="flex items-baseline justify-between">
-              <dt className="font-heading text-sm text-ink">{label}</dt>
-              <dd className="font-heading text-sm text-ink">
-                {review.scores[key]}
-                <span className="text-muted"> / {SCORE_MAX}</span>
-              </dd>
-            </div>
-            <div className="h-1 bg-rule" aria-hidden>
-              <div
-                className="h-full bg-primary"
-                style={{ width: `${(review.scores[key] / SCORE_MAX) * 100}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </dl>
-    </section>
+const isText = (value: unknown): value is string => typeof value === 'string' && value !== '';
 
-    {review.summary && (
-      <section className="flex flex-col gap-2">
-        <h3 className={sectionTitle}>Summary</h3>
-        <p className="text-sm leading-relaxed text-ink">{review.summary}</p>
-      </section>
-    )}
+interface ReviewResultProps {
+  /** Partial while streaming; every field is guarded because any may be missing. */
+  review: PartialWritingReview;
+  streaming?: boolean;
+}
 
-    {review.strengths.length > 0 && (
-      <section className="flex flex-col gap-2">
-        <h3 className={sectionTitle}>Strengths</h3>
-        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink">
-          {review.strengths.map((strength, index) => (
-            <li key={index}>{strength}</li>
-          ))}
-        </ul>
-      </section>
-    )}
+const ReviewResult = ({ review, streaming = false }: ReviewResultProps) => {
+  const scores = SCORE_LABELS.flatMap(({ key, label }) => {
+    const value = review.scores?.[key];
+    return typeof value === 'number' ? [{ key, label, value }] : [];
+  });
+  const strengths = Array.isArray(review.strengths) ? review.strengths.filter(isText) : [];
+  const issues = Array.isArray(review.issues)
+    ? review.issues.filter((issue) => typeof issue === 'object' && issue !== null)
+    : [];
 
-    <section className="flex flex-col gap-3">
-      <h3 className={sectionTitle}>Issues ({review.issues.length})</h3>
-      {review.issues.length === 0 ? (
-        <Message>Nothing to fix. Nice work.</Message>
-      ) : (
-        <ul className="flex flex-col gap-4">
-          {review.issues.map((issue, index) => (
-            <li key={index} className="flex flex-col gap-1.5 border-l-2 border-primary pl-3">
-              {issue.quote && <p className="text-sm text-ink italic">“{issue.quote}”</p>}
-              <p className="text-sm text-muted">{issue.problem}</p>
-              {issue.suggestion && (
-                <p className="text-sm text-ink">
-                  <span className="font-heading text-[0.65rem] uppercase tracking-[0.14em] text-muted">
-                    Try{' '}
-                  </span>
-                  {issue.suggestion}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
+  return (
+    <div className="flex flex-col gap-7">
+      {scores.length > 0 && (
+        <section className="flex flex-col gap-3" aria-label="Scores">
+          <h3 className={sectionTitle}>Scores</h3>
+          <dl className="flex flex-col gap-3">
+            {scores.map(({ key, label, value }) => (
+              <div key={key} className="flex flex-col gap-1">
+                <div className="flex items-baseline justify-between">
+                  <dt className="font-heading text-sm text-ink">{label}</dt>
+                  <dd className="font-heading text-sm text-ink">
+                    {value}
+                    <span className="text-muted"> / {SCORE_MAX}</span>
+                  </dd>
+                </div>
+                <div className="h-1 bg-rule" aria-hidden>
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${(Math.min(Math.max(value, 0), SCORE_MAX) / SCORE_MAX) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </dl>
+        </section>
       )}
-    </section>
-  </div>
-);
+
+      {isText(review.summary) && (
+        <section className="flex flex-col gap-2">
+          <h3 className={sectionTitle}>Summary</h3>
+          <p className="text-sm leading-relaxed text-ink">{review.summary}</p>
+        </section>
+      )}
+
+      {strengths.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className={sectionTitle}>Strengths</h3>
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink">
+            {strengths.map((strength, index) => (
+              <li key={index}>{strength}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {(!streaming || issues.length > 0) && (
+        <section className="flex flex-col gap-3">
+          <h3 className={sectionTitle}>Issues ({issues.length})</h3>
+          {issues.length === 0 ? (
+            <Message>Nothing to fix. Nice work.</Message>
+          ) : (
+            <ul className="flex flex-col gap-4">
+              {issues.map((issue, index) => (
+                <li key={index} className="flex flex-col gap-1.5 border-l-2 border-primary pl-3">
+                  {isText(issue.quote) && <p className="text-sm text-ink italic">“{issue.quote}”</p>}
+                  {isText(issue.problem) && <p className="text-sm text-muted">{issue.problem}</p>}
+                  {isText(issue.suggestion) && (
+                    <p className="text-sm text-ink">
+                      <span className="font-heading text-[0.65rem] uppercase tracking-[0.14em] text-muted">
+                        Try{' '}
+                      </span>
+                      {issue.suggestion}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+    </div>
+  );
+};
