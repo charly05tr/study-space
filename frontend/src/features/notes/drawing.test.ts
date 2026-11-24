@@ -7,6 +7,7 @@ import {
   canAddStroke,
   eraseAt,
   growHeight,
+  growSurface,
   normalizeDrawing,
   strokeHit,
   strokeToPath,
@@ -62,7 +63,7 @@ describe('normalizeDrawing', () => {
   });
 
   it('round-trips a valid drawing', () => {
-    const drawing = { version: 1, height: 900, strokes: [stroke([[1, 2], [3, 4]])] };
+    const drawing = { version: 1, height: 900, width: 1100, strokes: [stroke([[1, 2], [3, 4]])] };
     expect(normalizeDrawing(JSON.parse(JSON.stringify(drawing)))).toEqual(drawing);
   });
 
@@ -140,6 +141,49 @@ describe('growHeight', () => {
 
   it('never exceeds the backend limit', () => {
     expect(growHeight(99_990, 99_950)).toBe(DRAWING_LIMITS.maxHeight);
+  });
+});
+
+describe('growSurface', () => {
+  const size = { width: 700, height: 1000 };
+
+  it('returns the same object when the pointer is away from both edges', () => {
+    expect(growSurface({ x: 100, y: 100 }, size)).toBe(size);
+  });
+
+  it('grows only the width near the right edge', () => {
+    expect(growSurface({ x: 640, y: 100 }, size)).toEqual({ width: 900, height: 1000 });
+  });
+
+  it('grows only the height near the bottom edge', () => {
+    expect(growSurface({ x: 100, y: 960 }, size)).toEqual({ width: 700, height: 1200 });
+  });
+
+  it('grows both in the corner and never shrinks', () => {
+    const next = growSurface({ x: 900, y: 1100 }, size);
+    expect(next.width).toBeGreaterThanOrEqual(980);
+    expect(next.height).toBeGreaterThanOrEqual(1180);
+    expect(growSurface({ x: 10, y: 10 }, next)).toBe(next);
+  });
+
+  it('caps the width at the backend limit', () => {
+    expect(growSurface({ x: 99_990, y: 0 }, { width: 99_950, height: 1000 }).width).toBe(
+      DRAWING_LIMITS.maxWidth,
+    );
+  });
+});
+
+describe('normalizeDrawing width', () => {
+  it('treats a drawing saved without width as null', () => {
+    expect(normalizeDrawing({ version: 1, height: 500, strokes: [] }).width).toBeNull();
+  });
+
+  it('keeps a valid width and drops an invalid one', () => {
+    expect(normalizeDrawing({ version: 1, width: 1200, strokes: [] }).width).toBe(1200);
+    expect(normalizeDrawing({ version: 1, width: -5, strokes: [] }).width).toBeNull();
+    expect(normalizeDrawing({ version: 1, width: 1e9, strokes: [] }).width).toBe(
+      DRAWING_LIMITS.maxWidth,
+    );
   });
 });
 

@@ -85,6 +85,7 @@ class StudyspaceDetailSerializer(serializers.ModelSerializer):
 MAX_DRAWING_STROKES = 2000
 MAX_DRAWING_POINTS = 100_000
 MAX_DRAWING_HEIGHT = 100_000
+MAX_DRAWING_WIDTH = 100_000
 MAX_DRAWING_COORDINATE = 100_000
 
 
@@ -95,7 +96,7 @@ def _is_number(value):
 
 def validate_drawing(value):
     """
-    Accepts {"version": 1, "height": number|null, "strokes": [...]}, or an empty
+    Accepts {"version": 1, "height": number|null, "width"?: number|null, "strokes": [...]}, or an empty
     dict for "no drawing". Bounded so a client cannot park arbitrary JSON (or a
     huge one) in the row.
     """
@@ -110,6 +111,11 @@ def validate_drawing(value):
     height = value.get('height')
     if height is not None and not (_is_number(height) and 0 <= height <= MAX_DRAWING_HEIGHT):
         raise serializers.ValidationError("Invalid drawing height.")
+
+    # Optional: drawings saved before horizontal growth have no width at all.
+    width = value.get('width')
+    if width is not None and not (_is_number(width) and 0 <= width <= MAX_DRAWING_WIDTH):
+        raise serializers.ValidationError("Invalid drawing width.")
 
     strokes = value.get('strokes')
     if not isinstance(strokes, list) or len(strokes) > MAX_DRAWING_STROKES:

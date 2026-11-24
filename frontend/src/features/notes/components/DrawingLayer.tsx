@@ -7,9 +7,9 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
-} from 'react';
-import { Button } from '../../../components/ui';
-import { cn } from '../../../components/ui/cn';
+} from "react";
+import { Button } from "../../../components/ui";
+import { cn } from "../../../components/ui/cn";
 import {
   DEFAULT_COLOR,
   DEFAULT_WIDTH,
@@ -19,14 +19,14 @@ import {
   canAddStroke,
   clampCoordinate,
   eraseAt,
-  growHeight,
+  growSurface,
   strokeToPath,
   type NoteDrawing,
   type Stroke,
   type StrokePoint,
-} from '../drawing';
+} from "../drawing";
 
-type Tool = 'pen' | 'eraser';
+type Tool = "pen" | "eraser";
 
 const ERASER_RADIUS = 10;
 /** Past this distance from the viewport bottom the page follows the pen down. */
@@ -44,7 +44,7 @@ const ERASER_CURSOR =
   `<circle cx='11' cy='11' r='9' fill='none' stroke='black' stroke-width='1.5'/></svg>") 11 11, cell`;
 
 const newStrokeId = () =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+  typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -68,7 +68,7 @@ const StrokePaths = memo(({ strokes }: { strokes: Stroke[] }) => (
     ))}
   </>
 ));
-StrokePaths.displayName = 'StrokePaths';
+StrokePaths.displayName = "StrokePaths";
 
 interface DrawingLayerProps {
   /** Seeded once; the layer owns the strokes afterwards. */
@@ -101,8 +101,11 @@ export const DrawingLayer = ({
 
   const [strokes, setStrokes] = useState<Stroke[]>(initialDrawing.strokes);
   const [height, setHeight] = useState<number | null>(initialDrawing.height);
+  const [surfaceWidth, setSurfaceWidth] = useState<number | null>(
+    initialDrawing.width,
+  );
   const [liveD, setLiveD] = useState<string | null>(null);
-  const [tool, setTool] = useState<Tool>('pen');
+  const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
   const [width, setWidth] = useState<number>(DEFAULT_WIDTH);
 
@@ -110,8 +113,13 @@ export const DrawingLayer = ({
   // React re-renders, and a stale closure would drop points.
   const strokesRef = useRef(strokes);
   const heightRef = useRef(initialDrawing.height);
+  const widthRef = useRef(initialDrawing.width);
+  const grewRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const liveRef = useRef<StrokePoint[] | null>(null);
-  const erasingRef = useRef<{ before: Stroke[]; changed: boolean } | null>(null);
+  const erasingRef = useRef<{ before: Stroke[]; changed: boolean } | null>(
+    null,
+  );
   const historyRef = useRef<Stroke[][]>([]);
   const frameRef = useRef<number | null>(null);
   const onChangeRef = useRef(onChange);
@@ -124,11 +132,18 @@ export const DrawingLayer = ({
   /** Single write path, so history and persistence cannot drift apart. */
   const commit = useCallback((next: Stroke[], previous?: Stroke[]) => {
     if (previous) {
-      historyRef.current = [...historyRef.current, previous].slice(-MAX_HISTORY);
+      historyRef.current = [...historyRef.current, previous].slice(
+        -MAX_HISTORY,
+      );
     }
     strokesRef.current = next;
     setStrokes(next);
-    onChangeRef.current({ version: 1, height: heightRef.current, strokes: next });
+    onChangeRef.current({
+      version: 1,
+      height: heightRef.current,
+      width: widthRef.current,
+      strokes: next,
+    });
   }, []);
 
   const undo = useCallback(() => {
@@ -176,20 +191,24 @@ export const DrawingLayer = ({
     if (!active) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         event.preventDefault();
         onExit();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "z"
+      ) {
         event.preventDefault();
         event.stopPropagation();
         undo();
       }
     };
 
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [active, onExit, undo]);
 
   const eraseHere = (x: number, y: number) => {
@@ -203,17 +222,30 @@ export const DrawingLayer = ({
     setStrokes(next);
   };
 
-  const growIfNeeded = (y: number, rectHeight: number) => {
-    const current = Math.max(rectHeight, heightRef.current ?? 0);
-    const next = growHeight(y, current);
+  const growIfNeeded = (x: number, y: number, rect: DOMRect) => {
+    const current = {
+      width: Math.max(rect.width, widthRef.current ?? 0),
+      height: Math.max(rect.height, heightRef.current ?? 0),
+    };
+    const next = growSurface({ x, y }, current);
     if (next === current) return;
-    heightRef.current = next;
-    setHeight(next);
+
+    // Only the axis that actually grew is touched: writing the other one would
+    // freeze today's measured size into a persisted minimum.
+    if (next.width !== current.width) {
+      widthRef.current = next.width;
+      setSurfaceWidth(next.width);
+    }
+    if (next.height !== current.height) {
+      heightRef.current = next.height;
+      setHeight(next.height);
+    }
+    grewRef.current = true;
   };
 
   const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!active || !wrapRef.current) return;
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -222,12 +254,13 @@ export const DrawingLayer = ({
     const x = clampCoordinate(event.clientX - rect.left);
     const y = clampCoordinate(event.clientY - rect.top);
 
-    if (settingsRef.current.tool === 'eraser') {
+    if (settingsRef.current.tool === "eraser") {
       erasingRef.current = { before: strokesRef.current, changed: false };
       eraseHere(x, y);
       return;
     }
 
+    grewRef.current = false;
     liveRef.current = appendPoint([], x, y);
     scheduleLiveRender();
   };
@@ -240,7 +273,8 @@ export const DrawingLayer = ({
     // Coalesced events are the samples the browser merged into this one; using
     // them keeps fast strokes from turning into straight chords.
     const samples = event.nativeEvent.getCoalescedEvents?.();
-    const events = samples && samples.length > 0 ? samples : [event.nativeEvent];
+    const events =
+      samples && samples.length > 0 ? samples : [event.nativeEvent];
 
     for (const sample of events) {
       const x = clampCoordinate(sample.clientX - rect.left);
@@ -250,14 +284,22 @@ export const DrawingLayer = ({
         eraseHere(x, y);
       } else if (liveRef.current) {
         liveRef.current = appendPoint(liveRef.current, x, y);
-        growIfNeeded(y, rect.height);
+        growIfNeeded(x, y, rect);
       }
     }
 
     if (liveRef.current) {
       scheduleLiveRender();
       // Keeps the page following the pen so the user can reach the new space.
-      if (event.clientY > window.innerHeight - SCROLL_EDGE) window.scrollBy(0, SCROLL_STEP);
+      if (event.clientY > window.innerHeight - SCROLL_EDGE)
+        window.scrollBy(0, SCROLL_STEP);
+      const scroller = scrollRef.current;
+      if (
+        scroller &&
+        event.clientX > scroller.getBoundingClientRect().right - SCROLL_EDGE
+      ) {
+        scroller.scrollLeft += SCROLL_STEP;
+      }
     }
   };
 
@@ -275,49 +317,73 @@ export const DrawingLayer = ({
     if (!points) return;
 
     // Past the backend's bounds the stroke is dropped: persisting it would make
-    // the whole save fail and take every later stroke down with it.
-    if (!canAddStroke(strokesRef.current, points.length)) return;
+    // the whole save fail and take every later stroke down with it. The surface
+    // may already have grown during the gesture, and that growth stays (shrinking
+    // under the reader is worse), so it is persisted explicitly instead of being
+    // left in memory only.
+    if (!canAddStroke(strokesRef.current, points.length)) {
+      if (grewRef.current) commit(strokesRef.current);
+      return;
+    }
 
     const { color: penColor, width: penWidth } = settingsRef.current;
     commit(
-      [...strokesRef.current, { id: newStrokeId(), color: penColor, width: penWidth, points }],
+      [
+        ...strokesRef.current,
+        { id: newStrokeId(), color: penColor, width: penWidth, points },
+      ],
       strokesRef.current,
     );
   };
 
-  const cursor = tool === 'eraser' ? ERASER_CURSOR : PEN_CURSOR;
-  const svgStyle: CSSProperties = active ? { cursor, touchAction: 'none' } : {};
+  const cursor = tool === "eraser" ? ERASER_CURSOR : PEN_CURSOR;
+  const svgStyle: CSSProperties = {
+    // Wider than the editor only once the user drew past its right edge. The
+    // text column (the wrapper) never changes width; only this surface sticks
+    // out, and the scroller around it keeps the page layout intact.
+    width: surfaceWidth ? `max(100%, ${surfaceWidth}px)` : undefined,
+    ...(active ? { cursor, touchAction: "none" } : {}),
+  };
 
   return (
-    <div ref={wrapRef} className="relative" style={{ minHeight: height ?? undefined }}>
-      {children}
+    <>
+      <div ref={scrollRef} className="overflow-x-auto">
+        <div
+          ref={wrapRef}
+          className="relative"
+          style={{ minHeight: height ?? undefined }}
+        >
+          {children}
 
-      <svg
-        role="img"
-        aria-label="Drawing over the note"
-        className={cn(
-          'absolute left-0 top-0 z-[5] h-full w-full overflow-visible',
-          active ? 'pointer-events-auto' : 'pointer-events-none',
-        )}
-        style={svgStyle}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={finishGesture}
-        onPointerCancel={finishGesture}
-      >
-        <StrokePaths strokes={strokes} />
-        {liveD && (
-          <path
-            d={liveD}
-            fill="none"
-            stroke={color}
-            strokeWidth={width}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
-      </svg>
+          <svg
+            role="img"
+            aria-label="Drawing over the note"
+            className={cn(
+              "absolute left-0 top-0 z-[5] h-full w-full overflow-visible",
+              active ? "pointer-events-auto" : "pointer-events-none",
+            )}
+            style={svgStyle}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={finishGesture}
+            onPointerCancel={finishGesture}
+          >
+            <StrokePaths strokes={strokes} />
+            {liveD && (
+              <path
+                d={liveD}
+                fill="none"
+                stroke={color}
+                strokeWidth={width}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            )}
+          </svg>
+        </div>
+      </div>
 
+      {/* Outside the scroller so overflow clipping can never reach it. */}
       {active && (
         <div
           role="toolbar"
@@ -326,17 +392,17 @@ export const DrawingLayer = ({
         >
           <Button
             size="sm"
-            variant={tool === 'pen' ? 'secondary' : 'quiet'}
-            aria-pressed={tool === 'pen'}
-            onClick={() => setTool('pen')}
+            variant={tool === "pen" ? "secondary" : "quiet"}
+            aria-pressed={tool === "pen"}
+            onClick={() => setTool("pen")}
           >
             Pen
           </Button>
           <Button
             size="sm"
-            variant={tool === 'eraser' ? 'secondary' : 'quiet'}
-            aria-pressed={tool === 'eraser'}
-            onClick={() => setTool('eraser')}
+            variant={tool === "eraser" ? "secondary" : "quiet"}
+            aria-pressed={tool === "eraser"}
+            onClick={() => setTool("eraser")}
           >
             Eraser
           </Button>
@@ -347,15 +413,17 @@ export const DrawingLayer = ({
             <button
               key={swatch}
               type="button"
-              aria-label={`Color ${swatch.replace('var(--color-', '').replace(')', '')}`}
+              aria-label={`Color ${swatch.replace("var(--color-", "").replace(")", "")}`}
               aria-pressed={color === swatch}
               onClick={() => {
                 setColor(swatch);
-                setTool('pen');
+                setTool("pen");
               }}
               className={cn(
-                'h-5 w-5 rounded-full border-2',
-                color === swatch ? 'border-ink ring-2 ring-primary' : 'border-rule',
+                "h-5 w-5 rounded-full border-2",
+                color === swatch
+                  ? "border-ink ring-2 ring-primary"
+                  : "border-rule",
               )}
               style={{ backgroundColor: swatch }}
             />
@@ -371,14 +439,19 @@ export const DrawingLayer = ({
               aria-pressed={width === size}
               onClick={() => {
                 setWidth(size);
-                setTool('pen');
+                setTool("pen");
               }}
               className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-xs border',
-                width === size ? 'border-ink bg-tint' : 'border-transparent hover:border-rule',
+                "flex h-6 w-6 items-center justify-center rounded-xs border",
+                width === size
+                  ? "border-ink bg-tint"
+                  : "border-transparent hover:border-rule",
               )}
             >
-              <span className="rounded-full bg-ink" style={{ width: size + 2, height: size + 2 }} />
+              <span
+                className="rounded-full bg-ink"
+                style={{ width: size + 2, height: size + 2 }}
+              />
             </button>
           ))}
 
@@ -395,6 +468,6 @@ export const DrawingLayer = ({
           </Button>
         </div>
       )}
-    </div>
+    </>
   );
 };

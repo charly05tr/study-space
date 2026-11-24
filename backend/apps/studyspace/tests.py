@@ -1555,6 +1555,25 @@ class NoteDrawingApiTests(APITestCase):
         self.assertEqual(saved.title, 'Renamed')
         self.assertEqual(saved.drawing, self.DRAWING)
 
+    def test_drawing_width_round_trips_and_is_optional(self):
+        with_width = {**self.DRAWING, 'width': 1250}
+        self.assertEqual(
+            self.client.patch(self._detail(), {'drawing': with_width}, format='json').status_code, 200
+        )
+        self.assertEqual(self.client.get(self._detail()).json()['drawing'], with_width)
+
+        # A drawing without `width` (saved before horizontal growth) stays valid.
+        self.assertEqual(
+            self.client.patch(self._detail(), {'drawing': self.DRAWING}, format='json').status_code, 200
+        )
+
+    def test_invalid_width_is_rejected(self):
+        for width in (-1, 10**9, 'wide', True, [100]):
+            with self.subTest(width=width):
+                payload = {**self.DRAWING, 'width': width}
+                response = self.client.patch(self._detail(), {'drawing': payload}, format='json')
+                self.assertEqual(response.status_code, 400)
+
     def test_saving_content_does_not_clobber_the_drawing(self):
         self.client.patch(self._detail(), {'drawing': self.DRAWING}, format='json')
         self.client.patch(self._detail(), {'content': {'type': 'doc'}}, format='json')

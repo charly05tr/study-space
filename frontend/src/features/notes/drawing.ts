@@ -25,6 +25,12 @@ export interface NoteDrawing {
   version: 1;
   /** Extra height the user grew the note to, or null if never grown. */
   height: number | null;
+  /**
+   * Width of the drawing surface when the user drew past the right edge, or
+   * null for "as wide as the editor". Optional in stored data (older drawings
+   * have none); only the surface extends, the text column never does.
+   */
+  width: number | null;
   strokes: Stroke[];
 }
 
@@ -37,6 +43,7 @@ export const DRAWING_LIMITS = {
   maxStrokes: 2000,
   maxPoints: 100_000,
   maxHeight: 100_000,
+  maxWidth: 100_000,
   maxCoordinate: 100_000,
 } as const;
 
@@ -60,7 +67,7 @@ export const DEFAULT_WIDTH = PEN_WIDTHS[1];
 /** Pointer samples closer than this add bytes and no visible detail. */
 export const MIN_POINT_DISTANCE = 1.5;
 
-export const EMPTY_DRAWING: NoteDrawing = { version: 1, height: null, strokes: [] };
+export const EMPTY_DRAWING: NoteDrawing = { version: 1, height: null, width: null, strokes: [] };
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
@@ -100,12 +107,17 @@ export const normalizeDrawing = (raw: unknown): NoteDrawing => {
     });
   }
 
-  const height =
-    isFiniteNumber(source.height) && source.height > 0
-      ? Math.min(source.height, DRAWING_LIMITS.maxHeight)
-      : null;
+  const extent = (value: unknown, max: number) =>
+    isFiniteNumber(value) && value > 0 ? Math.min(value, max) : null;
 
-  return { version: 1, height, strokes };
+  // `width` is absent in drawings saved before horizontal growth existed; that
+  // reads as null, i.e. "as wide as the editor".
+  return {
+    version: 1,
+    height: extent(source.height, DRAWING_LIMITS.maxHeight),
+    width: extent(source.width, DRAWING_LIMITS.maxWidth),
+    strokes,
+  };
 };
 
 /** One decimal is a tenth of a CSS px: invisible, and a third of the JSON size. */
@@ -208,18 +220,40 @@ export const GROW_STEP = 200;
  * continuously, keeps layout changes rare while a stroke is in flight.
  * Never shrinks: undoing a stroke must not yank the page up under the reader.
  */
-export const growHeight = (
-  pointerY: number,
-  currentHeight: number,
+export const growExtent = (
+  pointer: number,
+  current: number,
   edge = GROW_EDGE,
   step = GROW_STEP,
-  maxHeight: number = DRAWING_LIMITS.maxHeight,
+  max: number = DRAWING_LIMITS.maxHeight,
 ): number => {
-  if (pointerY < currentHeight - edge) return currentHeight;
+  if (pointer < current - edge) return current;
 
-  const missing = pointerY + edge - currentHeight;
+  const missing = pointer + edge - current;
   const steps = Math.max(1, Math.ceil(missing / step));
-  return Math.min(currentHeight + steps * step, maxHeight);
+  return Math.min(current + steps * step, max);
+};
+
+/** Vertical case of growExtent; kept as its own name for readability at call sites. */
+export const growHeight = growExtent;
+
+export interface SurfaceSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Both axes at once: the same edge/step rule applied to the bottom and the
+ * right edge. Returns the same object when neither axis grew, so callers can
+ * compare by identity.
+ */
+export const growSurface = (
+  pointer: { x: number; y: number },
+  current: SurfaceSize,
+): SurfaceSize => {
+  const width = growExtent(pointer.x, current.width, GROW_EDGE, GROW_STEP, DRAWING_LIMITS.maxWidth);
+  const height = growExtent(pointer.y, current.height);
+  return width === current.width && height === current.height ? current : { width, height };
 };
 
 /** True while another stroke of `extraPoints` still fits the backend bounds. */
