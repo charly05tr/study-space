@@ -38,9 +38,15 @@ export const MIN_SHAPE_SIZE = 3;
 
 const roundTenth = (value: number) => Math.round(value * 10) / 10;
 
-/** True when the drag is too short to be a deliberate shape. */
-export const isDegenerateShape = (start: StrokePoint, end: StrokePoint): boolean =>
-  Math.hypot(end[0] - start[0], end[1] - start[1]) < MIN_SHAPE_SIZE;
+/**
+ * True when the drag is too short to be a deliberate shape. `minSize` is in
+ * world units: callers divide the screen threshold by the zoom.
+ */
+export const isDegenerateShape = (
+  start: StrokePoint,
+  end: StrokePoint,
+  minSize = MIN_SHAPE_SIZE,
+): boolean => Math.hypot(end[0] - start[0], end[1] - start[1]) < minSize;
 
 /**
  * Applies the Shift constraint while dragging.

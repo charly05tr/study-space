@@ -2,6 +2,7 @@ import { NodeSelection, Selection } from '@tiptap/pm/state';
 import type { Editor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from '../../../components/ui/cn';
 import { useStudyspaceAnnotations } from '../../annotations/hooks/useAnnotations';
 import type { Annotation } from '../../annotations/types';
@@ -246,30 +247,38 @@ export const BlockEditor = ({
           <EditorContent editor={editor} />
         </DrawingLayer>
 
-        {pickerQuery !== null && (
-          <AnnotationPicker
-            annotations={annotationsQuery.data ?? NO_ANNOTATIONS}
-            loading={annotationsQuery.isPending}
-            initialQuery={pickerQuery}
-            onClose={() => setPickerQuery(null)}
-            onSelect={(annotation) => {
-              setPickerQuery(null);
-              editor
-                .chain()
-                .focus()
-                .insertContent({ type: 'annotation', attrs: annotationToNodeAttrs(annotation) })
-                .run();
-            }}
-          />
-        )}
+        {/* Portalled to <body>: while drawing, the note page is moved by a CSS
+            transform, which would otherwise make the `fixed` positioning of these
+            overlays relative to the page instead of the viewport. */}
+        {createPortal(
+          <>
+            {pickerQuery !== null && (
+              <AnnotationPicker
+                annotations={annotationsQuery.data ?? NO_ANNOTATIONS}
+                loading={annotationsQuery.isPending}
+                initialQuery={pickerQuery}
+                onClose={() => setPickerQuery(null)}
+                onSelect={(annotation) => {
+                  setPickerQuery(null);
+                  editor
+                    .chain()
+                    .focus()
+                    .insertContent({ type: 'annotation', attrs: annotationToNodeAttrs(annotation) })
+                    .run();
+                }}
+              />
+            )}
 
-        {review && (
-          <WritingReviewPanel
-            key={review.seq}
-            text={review.text}
-            noteId={noteId}
-            onClose={() => setReviewState(null)}
-          />
+            {review && (
+              <WritingReviewPanel
+                key={review.seq}
+                text={review.text}
+                noteId={noteId}
+                onClose={() => setReviewState(null)}
+              />
+            )}
+          </>,
+          document.body,
         )}
       </div>
     </NoteEditorContext>

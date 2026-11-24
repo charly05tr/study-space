@@ -21,6 +21,7 @@ describe('toolForKey', () => {
     expect(toolForKey('l')?.tool).toBe('line');
     expect(toolForKey('a')?.tool).toBe('arrow');
     expect(toolForKey('e')?.tool).toBe('eraser');
+    expect(toolForKey('H')?.tool).toBe('hand');
   });
 
   it('ignores other keys', () => {

@@ -47,6 +47,8 @@ describe('isDegenerateShape', () => {
     expect(isDegenerateShape([5, 5], [5, 5])).toBe(true);
     expect(isDegenerateShape([5, 5], [6, 6])).toBe(true);
     expect(isDegenerateShape([5, 5], [20, 5])).toBe(false);
+    // Zoomed out, 3 screen px are 12 world units.
+    expect(isDegenerateShape([5, 5], [15, 5], 12)).toBe(true);
   });
 });
 

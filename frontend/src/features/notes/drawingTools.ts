@@ -1,6 +1,6 @@
 import type { ShapeType } from './shapes';
 
-export type Tool = 'pen' | 'eraser' | ShapeType;
+export type Tool = 'pen' | 'hand' | 'eraser' | ShapeType;
 
 export interface ToolEntry {
   tool: Tool;
@@ -10,6 +10,7 @@ export interface ToolEntry {
 }
 
 export const PEN_TOOL: ToolEntry = { tool: 'pen', label: 'Pen', key: 'p' };
+export const HAND_TOOL: ToolEntry = { tool: 'hand', label: 'Hand', key: 'h' };
 export const ERASER_TOOL: ToolEntry = { tool: 'eraser', label: 'Eraser', key: 'e' };
 
 /** Order here is the order of the shapes dropdown. */
@@ -22,7 +23,7 @@ export const SHAPE_TOOLS: (ToolEntry & { tool: ShapeType })[] = [
 
 export const DEFAULT_SHAPE: ShapeType = 'rect';
 
-const ALL_TOOLS: ToolEntry[] = [PEN_TOOL, ...SHAPE_TOOLS, ERASER_TOOL];
+const ALL_TOOLS: ToolEntry[] = [PEN_TOOL, HAND_TOOL, ...SHAPE_TOOLS, ERASER_TOOL];
 
 /** The tool a single-key shortcut selects, if any. */
 export const toolForKey = (key: string): ToolEntry | undefined =>

@@ -33,9 +33,9 @@ export interface NoteDrawing {
   /** Extra height the user grew the note to, or null if never grown. */
   height: number | null;
   /**
-   * Width of the drawing surface when the user drew past the right edge, or
-   * null for "as wide as the editor". Optional in stored data (older drawings
-   * have none); only the surface extends, the text column never does.
+   * Legacy: the width the surface used to grow to. The canvas is unbounded now,
+   * so it no longer drives layout. Still read and written back untouched so
+   * older saved drawings and the backend schema stay compatible.
    */
   width: number | null;
   strokes: Stroke[];
@@ -213,51 +213,25 @@ export const eraseAt = (strokes: Stroke[], x: number, y: number, radius: number)
   return remaining.length === strokes.length ? strokes : remaining;
 };
 
-export const GROW_EDGE = 80;
-export const GROW_STEP = 200;
+/** Space kept below the lowest stroke so it never sits on the very edge of the note. */
+export const HEIGHT_MARGIN = 40;
 
 /**
- * Height the note should have so the pen can keep going down.
- *
- * Within `edge` px of the bottom the area grows by whole `step`s, enough that
- * the pointer ends up outside the trigger zone again. Growing in steps, not
- * continuously, keeps layout changes rare while a stroke is in flight.
- * Never shrinks: undoing a stroke must not yank the page up under the reader.
+ * Height the note area needs so every stroke below the text stays visible in
+ * normal (non-drawing) mode, where nothing outside the column is shown. Strokes
+ * at negative y or outside the column horizontally are deliberately not covered:
+ * they are only reachable in draw mode. Returns 0 when there is nothing below
+ * the top edge.
  */
-export const growExtent = (
-  pointer: number,
-  current: number,
-  edge = GROW_EDGE,
-  step = GROW_STEP,
-  max: number = DRAWING_LIMITS.maxHeight,
-): number => {
-  if (pointer < current - edge) return current;
-
-  const missing = pointer + edge - current;
-  const steps = Math.max(1, Math.ceil(missing / step));
-  return Math.min(current + steps * step, max);
-};
-
-/** Vertical case of growExtent; kept as its own name for readability at call sites. */
-export const growHeight = growExtent;
-
-export interface SurfaceSize {
-  width: number;
-  height: number;
-}
-
-/**
- * Both axes at once: the same edge/step rule applied to the bottom and the
- * right edge. Returns the same object when neither axis grew, so callers can
- * compare by identity.
- */
-export const growSurface = (
-  pointer: { x: number; y: number },
-  current: SurfaceSize,
-): SurfaceSize => {
-  const width = growExtent(pointer.x, current.width, GROW_EDGE, GROW_STEP, DRAWING_LIMITS.maxWidth);
-  const height = growExtent(pointer.y, current.height);
-  return width === current.width && height === current.height ? current : { width, height };
+export const requiredHeight = (strokes: Stroke[]): number => {
+  let lowest = -Infinity;
+  for (const stroke of strokes) {
+    for (const point of stroke.points) {
+      lowest = Math.max(lowest, point[1] + stroke.width / 2);
+    }
+  }
+  if (lowest <= 0) return 0;
+  return Math.min(Math.ceil(lowest + HEIGHT_MARGIN), DRAWING_LIMITS.maxHeight);
 };
 
 /** True while another stroke of `extraPoints` still fits the backend bounds. */
@@ -268,34 +242,9 @@ export const canAddStroke = (strokes: Stroke[], extraPoints: number): boolean =>
 };
 
 /**
- * Clamps to the backend's coordinate bound so one wild sample cannot 400 a save.
- * `min` is 0 for y (the surface starts at the editor's top) and the negative
- * left bleed for x, so the pen can go left of the text column.
+ * Clamps to the backend's coordinate bound (|value| <= maxCoordinate) so one wild
+ * sample cannot 400 a save. Negative values are valid on both axes: the canvas is
+ * unbounded and strokes can sit above or left of the note.
  */
-export const clampCoordinate = (value: number, min = 0) =>
-  Math.max(min, Math.min(value, DRAWING_LIMITS.maxCoordinate));
-
-/** How far the drawing surface reaches past the text column on each side. */
-export interface Bleed {
-  left: number;
-  right: number;
-}
-
-export const NO_BLEED: Bleed = { left: 0, right: 0 };
-
-/**
- * Space between the text column and the edges of the area the note lives in.
- *
- * The surface is as wide as that area, not as wide as the column, so strokes can
- * be drawn anywhere across the page without being cut at the column edge. All
- * values are viewport x positions; `scrollLeft` is added back to the column
- * because a horizontally scrolled wrapper moves it left without moving the area.
- */
-export const computeBleed = (
-  column: { left: number; right: number },
-  area: { left: number; right: number; paddingLeft: number; paddingRight: number },
-  scrollLeft = 0,
-): Bleed => ({
-  left: Math.max(0, Math.round(column.left + scrollLeft - (area.left + area.paddingLeft))),
-  right: Math.max(0, Math.round(area.right - area.paddingRight - (column.right + scrollLeft))),
-});
+export const clampCoordinate = (value: number) =>
+  Math.max(-DRAWING_LIMITS.maxCoordinate, Math.min(value, DRAWING_LIMITS.maxCoordinate));
