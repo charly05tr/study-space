@@ -10,11 +10,18 @@
  * blocks is a much bigger problem and is deliberately not attempted here.
  */
 
+import { distanceToSegment, isShapeType, shapeHit, type StrokeType } from './shapes';
+
 /** [x, y] in CSS px relative to the editor container. */
 export type StrokePoint = [number, number];
 
 export interface Stroke {
   id: string;
+  /**
+   * Absent means 'free' (every drawing saved before the shape tools). Shapes
+   * carry exactly two points; see shapes.ts.
+   */
+  type?: StrokeType;
   color: string;
   width: number;
   points: StrokePoint[];
@@ -97,8 +104,15 @@ export const normalizeDrawing = (raw: unknown): NoteDrawing => {
     }
     if (points.length === 0) continue;
 
+    // Unknown types are dropped rather than guessed at, and a shape that does not
+    // have exactly its two defining points cannot be drawn.
+    const type = item.type;
+    if (type !== undefined && type !== 'free' && !isShapeType(type)) continue;
+    if (isShapeType(type) && points.length !== 2) continue;
+
     strokes.push({
       id: item.id,
+      ...(isShapeType(type) ? { type } : {}),
       color: (PEN_COLORS as readonly string[]).includes(item.color as string)
         ? (item.color as string)
         : DEFAULT_COLOR,
@@ -171,26 +185,16 @@ export const strokeToPath = (points: StrokePoint[]): string => {
   return `${d}L${format(last[0])} ${format(last[1])}`;
 };
 
-/** Distance from (px, py) to the segment a-b. */
-export const distanceToSegment = (
-  px: number,
-  py: number,
-  [ax, ay]: StrokePoint,
-  [bx, by]: StrokePoint,
-): number => {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared === 0) return Math.hypot(px - ax, py - ay);
-
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-};
+export { distanceToSegment };
 
 /** Whether an eraser of `radius` centred on (x, y) touches the stroke. */
 export const strokeHit = (stroke: Stroke, x: number, y: number, radius: number): boolean => {
   const reach = radius + stroke.width / 2;
   const { points } = stroke;
+
+  if (isShapeType(stroke.type) && points.length === 2) {
+    return shapeHit(stroke.type, points[0], points[1], x, y, reach);
+  }
 
   if (points.length === 1) return Math.hypot(x - points[0][0], y - points[0][1]) <= reach;
 

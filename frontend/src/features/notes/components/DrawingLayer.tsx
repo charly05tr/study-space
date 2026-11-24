@@ -20,13 +20,21 @@ import {
   clampCoordinate,
   eraseAt,
   growSurface,
+  roundCoordinate,
   strokeToPath,
   type NoteDrawing,
   type Stroke,
   type StrokePoint,
 } from "../drawing";
-
-type Tool = "pen" | "eraser";
+import {
+  arrowHeadPath,
+  boxOf,
+  constrainShape,
+  isDegenerateShape,
+  isShapeType,
+  type ShapeType,
+  type StrokeType,
+} from "../shapes";
 
 const ERASER_RADIUS = 10;
 /** Past this distance from the viewport bottom the page follows the pen down. */
@@ -43,6 +51,12 @@ const ERASER_CURSOR =
   `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'>` +
   `<circle cx='11' cy='11' r='9' fill='none' stroke='black' stroke-width='1.5'/></svg>") 11 11, cell`;
 
+/** A shift-constrained end point can land outside the backend's bounds. */
+const clampPoint = ([x, y]: StrokePoint): StrokePoint => [
+  clampCoordinate(x),
+  clampCoordinate(y),
+];
+
 const newStrokeId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -56,19 +70,79 @@ const newStrokeId = () =>
 const StrokePaths = memo(({ strokes }: { strokes: Stroke[] }) => (
   <>
     {strokes.map((stroke) => (
-      <path
-        key={stroke.id}
-        d={strokeToPath(stroke.points)}
-        fill="none"
-        stroke={stroke.color}
-        strokeWidth={stroke.width}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <StrokeShape key={stroke.id} stroke={stroke} />
     ))}
   </>
 ));
 StrokePaths.displayName = "StrokePaths";
+
+/**
+ * One stroke or shape as SVG. Shapes are unfilled outlines drawn with the same
+ * stroke colour and width as freehand, so they adapt to the theme the same way;
+ * smoothing applies to freehand only.
+ */
+const StrokeShape = ({
+  stroke,
+}: {
+  stroke: Pick<Stroke, "type" | "color" | "width" | "points">;
+}) => {
+  const common = {
+    fill: "none",
+    stroke: stroke.color,
+    strokeWidth: stroke.width,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  const { type, points } = stroke;
+
+  if (isShapeType(type) && points.length === 2) {
+    const [a, b] = points;
+    if (type === "rect") {
+      const box = boxOf(a, b);
+      return <rect {...box} {...common} />;
+    }
+    if (type === "ellipse") {
+      const box = boxOf(a, b);
+      return (
+        <ellipse
+          cx={box.x + box.width / 2}
+          cy={box.y + box.height / 2}
+          rx={box.width / 2}
+          ry={box.height / 2}
+          {...common}
+        />
+      );
+    }
+    return (
+      <>
+        <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} {...common} />
+        {type === "arrow" && (
+          <path d={arrowHeadPath(a, b, stroke.width)} {...common} />
+        )}
+      </>
+    );
+  }
+
+  return <path d={strokeToPath(points)} {...common} />;
+};
+
+type Tool = "pen" | "eraser" | ShapeType;
+
+/** Toolbar order and the Excalidraw-style single-key shortcut of each tool. */
+const TOOLS: { tool: Tool; label: string; key: string }[] = [
+  { tool: "pen", label: "Pen", key: "p" },
+  { tool: "rect", label: "Rectangle", key: "r" },
+  { tool: "ellipse", label: "Ellipse", key: "o" },
+  { tool: "line", label: "Line", key: "l" },
+  { tool: "arrow", label: "Arrow", key: "a" },
+  { tool: "eraser", label: "Eraser", key: "e" },
+];
+
+/** What is being drawn right now: freehand samples, or a shape's two points. */
+interface LiveStroke {
+  type: StrokeType;
+  points: StrokePoint[];
+}
 
 interface DrawingLayerProps {
   /** Seeded once; the layer owns the strokes afterwards. */
@@ -104,7 +178,7 @@ export const DrawingLayer = ({
   const [surfaceWidth, setSurfaceWidth] = useState<number | null>(
     initialDrawing.width,
   );
-  const [liveD, setLiveD] = useState<string | null>(null);
+  const [live, setLive] = useState<LiveStroke | null>(null);
   const [tool, setTool] = useState<Tool>("pen");
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
   const [width, setWidth] = useState<number>(DEFAULT_WIDTH);
@@ -116,7 +190,9 @@ export const DrawingLayer = ({
   const widthRef = useRef(initialDrawing.width);
   const grewRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef<StrokePoint[] | null>(null);
+  const liveRef = useRef<LiveStroke | null>(null);
+  /** Where a shape drag began; the live shape is always start -> constrained pointer. */
+  const shapeStartRef = useRef<StrokePoint | null>(null);
   const erasingRef = useRef<{ before: Stroke[]; changed: boolean } | null>(
     null,
   );
@@ -163,7 +239,9 @@ export const DrawingLayer = ({
     if (frameRef.current !== null) return;
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = null;
-      setLiveD(liveRef.current ? strokeToPath(liveRef.current) : null);
+      // A fresh object each frame, so React sees a change even when only the
+      // (immutably replaced) points moved.
+      setLive(liveRef.current ? { ...liveRef.current } : null);
     });
   }, []);
 
@@ -204,7 +282,21 @@ export const DrawingLayer = ({
         event.preventDefault();
         event.stopPropagation();
         undo();
+        return;
       }
+
+      // Single-key tool shortcuts. Never while typing in a field, never with a
+      // modifier (Ctrl+R must still reload), and swallowed so the key cannot
+      // reach ProseMirror.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']"))
+        return;
+      const match = TOOLS.find((entry) => entry.key === event.key.toLowerCase());
+      if (!match) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setTool(match.tool);
     };
 
     window.addEventListener("keydown", onKeyDown, true);
@@ -261,7 +353,17 @@ export const DrawingLayer = ({
     }
 
     grewRef.current = false;
-    liveRef.current = appendPoint([], x, y);
+    const { tool: current } = settingsRef.current;
+    if (isShapeType(current)) {
+      shapeStartRef.current = [roundCoordinate(x), roundCoordinate(y)];
+      liveRef.current = {
+        type: current,
+        points: [shapeStartRef.current, shapeStartRef.current],
+      };
+    } else {
+      shapeStartRef.current = null;
+      liveRef.current = { type: "free", points: appendPoint([], x, y) };
+    }
     scheduleLiveRender();
   };
 
@@ -283,7 +385,20 @@ export const DrawingLayer = ({
       if (erasingRef.current) {
         eraseHere(x, y);
       } else if (liveRef.current) {
-        liveRef.current = appendPoint(liveRef.current, x, y);
+        const { type, points } = liveRef.current;
+        const start = shapeStartRef.current;
+        liveRef.current =
+          isShapeType(type) && start
+            ? {
+                type,
+                points: [
+                  start,
+                  clampPoint(constrainShape(type, start, [x, y], sample.shiftKey)),
+                ],
+              }
+            : { type, points: appendPoint(points, x, y) };
+        // Grown by the raw pointer, so a shape dragged to the edge extends the
+        // surface exactly like a freehand stroke does.
         growIfNeeded(x, y, rect);
       }
     }
@@ -311,10 +426,19 @@ export const DrawingLayer = ({
       return;
     }
 
-    const points = liveRef.current;
+    const finished = liveRef.current;
     liveRef.current = null;
-    setLiveD(null);
-    if (!points) return;
+    shapeStartRef.current = null;
+    setLive(null);
+    if (!finished) return;
+    const { type, points } = finished;
+
+    // A click without a drag is not a shape. Growth is impossible without a
+    // drag, but persisting it when it happened keeps the rule uniform.
+    if (isShapeType(type) && isDegenerateShape(points[0], points[1])) {
+      if (grewRef.current) commit(strokesRef.current);
+      return;
+    }
 
     // Past the backend's bounds the stroke is dropped: persisting it would make
     // the whole save fail and take every later stroke down with it. The surface
@@ -330,13 +454,26 @@ export const DrawingLayer = ({
     commit(
       [
         ...strokesRef.current,
-        { id: newStrokeId(), color: penColor, width: penWidth, points },
+        {
+          id: newStrokeId(),
+          // Omitted for freehand so old and new freehand strokes look identical
+          // in storage.
+          ...(isShapeType(type) ? { type } : {}),
+          color: penColor,
+          width: penWidth,
+          points,
+        },
       ],
       strokesRef.current,
     );
   };
 
-  const cursor = tool === "eraser" ? ERASER_CURSOR : PEN_CURSOR;
+  const cursor =
+    tool === "eraser"
+      ? ERASER_CURSOR
+      : isShapeType(tool)
+        ? "crosshair"
+        : PEN_CURSOR;
   const svgStyle: CSSProperties = {
     // Wider than the editor only once the user drew past its right edge. The
     // text column (the wrapper) never changes width; only this surface sticks
@@ -369,16 +506,7 @@ export const DrawingLayer = ({
             onPointerCancel={finishGesture}
           >
             <StrokePaths strokes={strokes} />
-            {liveD && (
-              <path
-                d={liveD}
-                fill="none"
-                stroke={color}
-                strokeWidth={width}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
+            {live && <StrokeShape stroke={{ ...live, color, width }} />}
           </svg>
         </div>
       </div>
@@ -390,22 +518,19 @@ export const DrawingLayer = ({
           aria-label="Drawing tools"
           className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-xs border border-rule bg-page px-3 py-2 shadow-sm"
         >
-          <Button
-            size="sm"
-            variant={tool === "pen" ? "secondary" : "quiet"}
-            aria-pressed={tool === "pen"}
-            onClick={() => setTool("pen")}
-          >
-            Pen
-          </Button>
-          <Button
-            size="sm"
-            variant={tool === "eraser" ? "secondary" : "quiet"}
-            aria-pressed={tool === "eraser"}
-            onClick={() => setTool("eraser")}
-          >
-            Eraser
-          </Button>
+          {TOOLS.map((entry) => (
+            <Button
+              key={entry.tool}
+              size="sm"
+              variant={tool === entry.tool ? "secondary" : "quiet"}
+              aria-pressed={tool === entry.tool}
+              aria-keyshortcuts={entry.key.toUpperCase()}
+              title={`${entry.label} (${entry.key.toUpperCase()})`}
+              onClick={() => setTool(entry.tool)}
+            >
+              {entry.label}
+            </Button>
+          ))}
 
           <span className="mx-1 h-5 w-px bg-rule" aria-hidden />
 
@@ -417,7 +542,7 @@ export const DrawingLayer = ({
               aria-pressed={color === swatch}
               onClick={() => {
                 setColor(swatch);
-                setTool("pen");
+                setTool((current) => (current === "eraser" ? "pen" : current));
               }}
               className={cn(
                 "h-5 w-5 rounded-full border-2",
@@ -439,7 +564,7 @@ export const DrawingLayer = ({
               aria-pressed={width === size}
               onClick={() => {
                 setWidth(size);
-                setTool("pen");
+                setTool((current) => (current === "eraser" ? "pen" : current));
               }}
               className={cn(
                 "flex h-6 w-6 items-center justify-center rounded-xs border",

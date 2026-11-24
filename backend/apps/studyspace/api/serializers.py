@@ -86,6 +86,8 @@ MAX_DRAWING_STROKES = 2000
 MAX_DRAWING_POINTS = 100_000
 MAX_DRAWING_HEIGHT = 100_000
 MAX_DRAWING_WIDTH = 100_000
+DRAWING_SHAPE_TYPES = ('rect', 'ellipse', 'line', 'arrow')
+DRAWING_STROKE_TYPES = ('free',) + DRAWING_SHAPE_TYPES
 MAX_DRAWING_COORDINATE = 100_000
 
 
@@ -133,9 +135,17 @@ def validate_drawing(value):
         if not (_is_number(width) and 0 < width <= 100):
             raise serializers.ValidationError("Invalid stroke width.")
 
+        # Absent means freehand: drawings saved before the shape tools have no type.
+        stroke_type = stroke.get('type', 'free')
+        if stroke_type not in DRAWING_STROKE_TYPES:
+            raise serializers.ValidationError("Invalid stroke type.")
+
         points = stroke.get('points')
         if not isinstance(points, list):
             raise serializers.ValidationError("Stroke points must be a list.")
+        # A shape is its two defining points (opposite corners, or start and end).
+        if stroke_type in DRAWING_SHAPE_TYPES and len(points) != 2:
+            raise serializers.ValidationError("A shape needs exactly two points.")
         total_points += len(points)
         if total_points > MAX_DRAWING_POINTS:
             raise serializers.ValidationError("Drawing has too many points.")

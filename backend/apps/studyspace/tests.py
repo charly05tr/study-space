@@ -1567,6 +1567,46 @@ class NoteDrawingApiTests(APITestCase):
             self.client.patch(self._detail(), {'drawing': self.DRAWING}, format='json').status_code, 200
         )
 
+    def _with_stroke(self, **overrides):
+        stroke = {'id': 'x', 'color': '#000', 'width': 2, 'points': [[0, 0], [40, 30]], **overrides}
+        return {'version': 1, 'height': None, 'strokes': [stroke]}
+
+    def test_every_shape_type_round_trips(self):
+        for shape in ('rect', 'ellipse', 'line', 'arrow'):
+            with self.subTest(shape=shape):
+                drawing = self._with_stroke(type=shape)
+                response = self.client.patch(self._detail(), {'drawing': drawing}, format='json')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(self.client.get(self._detail()).json()['drawing'], drawing)
+
+    def test_strokes_without_a_type_or_typed_free_stay_valid(self):
+        # Old drawings carry no `type`, and many points are fine for freehand.
+        for stroke in ({}, {'type': 'free'}, {'points': [[0, 0], [1, 1], [2, 2]]}):
+            with self.subTest(stroke=stroke):
+                response = self.client.patch(
+                    self._detail(), {'drawing': self._with_stroke(**stroke)}, format='json'
+                )
+                self.assertEqual(response.status_code, 200)
+
+    def test_unknown_stroke_type_is_rejected(self):
+        for stroke_type in ('star', '', None, 5, ['rect']):
+            with self.subTest(stroke_type=stroke_type):
+                response = self.client.patch(
+                    self._detail(), {'drawing': self._with_stroke(type=stroke_type)}, format='json'
+                )
+                self.assertEqual(response.status_code, 400)
+
+    def test_shape_needs_exactly_two_points(self):
+        for shape in ('rect', 'ellipse', 'line', 'arrow'):
+            for points in ([], [[0, 0]], [[0, 0], [1, 1], [2, 2]]):
+                with self.subTest(shape=shape, points=points):
+                    response = self.client.patch(
+                        self._detail(),
+                        {'drawing': self._with_stroke(type=shape, points=points)},
+                        format='json',
+                    )
+                    self.assertEqual(response.status_code, 400)
+
     def test_invalid_width_is_rejected(self):
         for width in (-1, 10**9, 'wide', True, [100]):
             with self.subTest(width=width):
