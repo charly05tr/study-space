@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Badge,
   Button,
+  ConfirmButton,
   Divider,
   EmptyState,
   ErrorState,
   Skeleton,
   SkeletonText,
+  useNotification,
 } from '../../../components/ui';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
 import { formatDate } from '../../../lib/formatDate';
@@ -20,6 +22,7 @@ import { AddSourceForm } from '../../sources/components/AddSourceForm';
 import { SourceRow } from '../../sources/components/SourceRow';
 import { DetailSection } from '../components/DetailSection';
 import { EditStudyspaceForm } from '../components/EditStudyspaceForm';
+import { useDeleteStudyspace } from '../hooks/useDeleteStudyspace';
 import { useStudyspace } from '../hooks/useStudyspace';
 
 const BackLink = () => (
@@ -39,6 +42,29 @@ export const StudyspaceDetailPage = () => {
   const [addingNote, setAddingNote] = useState(false);
   const [editing, setEditing] = useState(false);
   const { data: studyspace, isPending, isError, error, refetch } = useStudyspace(id);
+  const remove = useDeleteStudyspace(id);
+  const navigate = useNavigate();
+  const { notify } = useNotification();
+
+  const handleDelete = () => {
+    remove.mutate(undefined, {
+      onSuccess: () => {
+        notify({
+          variant: 'success',
+          title: 'Studyspace deleted',
+          message: 'Its notes, sources and sessions were deleted with it.',
+        });
+        navigate('/studyspaces', { replace: true });
+      },
+      onError: (err) => {
+        notify({
+          variant: 'error',
+          title: 'Could not delete the studyspace',
+          message: getApiErrorMessage(err),
+        });
+      },
+    });
+  };
 
   if (isPending) {
     return (
@@ -88,9 +114,18 @@ export const StudyspaceDetailPage = () => {
             </p>
           </div>
 
-          <Button variant="quiet" size="sm" onClick={() => setEditing((open) => !open)}>
-            {editing ? 'Close' : 'Edit'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="quiet" size="sm" onClick={() => setEditing((open) => !open)}>
+              {editing ? 'Close' : 'Edit'}
+            </Button>
+            <ConfirmButton
+              confirmLabel="Delete everything?"
+              loading={remove.isPending}
+              onConfirm={handleDelete}
+            >
+              Delete
+            </ConfirmButton>
+          </div>
         </div>
 
         {/* The form replaces the heading's metadata rather than sitting beside

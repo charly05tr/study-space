@@ -1249,6 +1249,31 @@ class StudyspaceUpdateApiTests(APITestCase):
         self.assertIn('notes', body)
         self.assertIn('references', body)
 
+    def test_deleting_removes_the_studyspace_and_its_notes(self):
+        from apps.studyspace.models import Note, Studyspace
+
+        Note.objects.create(title="Scheduling", studyspace=self.studyspace)
+
+        response = self.client.delete(f"{self.URL}{self.studyspace.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Studyspace.objects.filter(pk=self.studyspace.pk).exists())
+        self.assertFalse(Note.objects.filter(title="Scheduling").exists())
+
+    def test_another_account_cannot_delete_the_studyspace(self):
+        from apps.studyspace.models import Studyspace
+        from apps.users.models import User
+
+        intruder = User.objects.create_user(
+            email="otro@example.com", username="otro", password="x"
+        )
+        self.client.force_authenticate(intruder)
+
+        response = self.client.delete(f"{self.URL}{self.studyspace.pk}/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Studyspace.objects.filter(pk=self.studyspace.pk).exists())
+
     def test_editing_the_description_leaves_the_title_alone(self):
         body = self._patch({'description': 'Planificacion de procesos'}).json()
         self.assertEqual(body['description'], 'Planificacion de procesos')
