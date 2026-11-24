@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import type { NoteDrawing } from './drawing';
 
 /**
  * Note.content is a JSONField (migration 0009), so it stores the TipTap
@@ -22,6 +23,8 @@ export interface NoteDetail {
   id: number;
   title: string;
   content: NoteDocument;
+  /** Freehand strokes over the note. `{}` until the first stroke is saved. */
+  drawing: NoteDrawing | Record<string, never>;
   studyspace: number;
   created_at: string;
   updated_at: string;
@@ -35,6 +38,8 @@ export interface NoteDetail {
 export interface NoteUpdatePayload {
   title?: string;
   content?: NoteDocument;
+  /** Sent alone by the drawing autosave, so it never carries the body. */
+  drawing?: NoteDrawing;
 }
 
 /**

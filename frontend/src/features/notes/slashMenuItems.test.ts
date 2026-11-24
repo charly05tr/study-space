@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { SLASH_ITEMS, filterAiItems, filterSlashItems } from './slashMenuItems';
+import {
+  DRAW_KEY,
+  SLASH_ITEMS,
+  filterAiItems,
+  filterDrawItems,
+  filterSlashItems,
+} from './slashMenuItems';
+
+describe('filterDrawItems', () => {
+  it('offers the draw action for an empty query and by its aliases', () => {
+    expect(filterDrawItems('').map((item) => item.key)).toEqual([DRAW_KEY]);
+    expect(filterDrawItems('pen')).toHaveLength(1);
+    expect(filterDrawItems('sketch')).toHaveLength(1);
+  });
+
+  it('stays out of the way of unrelated queries', () => {
+    expect(filterDrawItems('table')).toEqual([]);
+  });
+});
 
 const titles = (query: string) => filterSlashItems(query).map((item) => item.title);
 

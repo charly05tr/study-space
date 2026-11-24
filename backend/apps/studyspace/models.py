@@ -35,6 +35,11 @@ class Note(models.Model):
     # sincronizar. Cambiar una palabra SI la cambia, mover el cursor no.
     blocks_hash = models.CharField(max_length=64, blank=True, editable=False)
 
+    # Freehand strokes drawn over the note. Kept apart from `content` on purpose:
+    # strokes are not text, so they must never reach the block index or the
+    # blocks_hash. Shape is validated in validate_drawing (api/serializers.py).
+    drawing = models.JSONField(default=dict, blank=True)
+
     # Relations
     studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='notes')
     

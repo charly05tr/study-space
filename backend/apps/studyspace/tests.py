@@ -1498,6 +1498,122 @@ class NoteDeletionApiTests(APITestCase):
         self.assertTrue(Note.objects.filter(pk=self.note.pk).exists())
 
 
+class NoteDrawingApiTests(APITestCase):
+    URL = '/api/notes/'
+
+    DRAWING = {
+        'version': 1,
+        'height': 1400,
+        'strokes': [
+            {
+                'id': 's1',
+                'color': '#112233',
+                'width': 3,
+                'points': [[10, 20], [12.5, 22.5, 0.5]],
+            }
+        ],
+    }
+
+    def setUp(self):
+        from apps.studyspace.models import Note, Studyspace
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(
+            email="dibujante@example.com", username="dibujante", password="x"
+        )
+        self.studyspace = Studyspace.objects.create(title="Art", description="", user=self.user)
+        self.note = Note.objects.create(
+            title="Sketch", studyspace=self.studyspace, content={'type': 'doc', 'content': []}
+        )
+        self.client.force_authenticate(self.user)
+
+    def _detail(self):
+        return f"{self.URL}{self.note.pk}/"
+
+    def test_drawing_round_trips_and_leaves_content_alone(self):
+        response = self.client.patch(self._detail(), {'drawing': self.DRAWING}, format='json')
+        self.assertEqual(response.status_code, 200)
+
+        fetched = self.client.get(self._detail()).json()
+        self.assertEqual(fetched['drawing'], self.DRAWING)
+        self.assertEqual(fetched['content'], {'type': 'doc', 'content': []})
+
+    def test_a_stale_content_save_does_not_overwrite_a_newer_drawing(self):
+        from apps.studyspace.models import Note
+        from apps.studyspace.services.note_service import NoteService
+
+        # The content request loaded the row first; the drawing request then
+        # committed before the content request got to save.
+        stale = Note.objects.get(pk=self.note.pk)
+        Note.objects.filter(pk=self.note.pk).update(drawing=self.DRAWING)
+
+        NoteService(image_service=None).update_note(
+            data={'title': 'Renamed'}, note=stale, new_images=[], images_to_delete_ids=[]
+        )
+
+        saved = Note.objects.get(pk=self.note.pk)
+        self.assertEqual(saved.title, 'Renamed')
+        self.assertEqual(saved.drawing, self.DRAWING)
+
+    def test_saving_content_does_not_clobber_the_drawing(self):
+        self.client.patch(self._detail(), {'drawing': self.DRAWING}, format='json')
+        self.client.patch(self._detail(), {'content': {'type': 'doc'}}, format='json')
+
+        fetched = self.client.get(self._detail()).json()
+        self.assertEqual(fetched['drawing'], self.DRAWING)
+        self.assertEqual(fetched['content'], {'type': 'doc'})
+
+    def test_new_note_has_an_empty_drawing(self):
+        self.assertEqual(self.client.get(self._detail()).json()['drawing'], {})
+
+    def test_invalid_payloads_are_rejected(self):
+        bad = [
+            [],
+            'x',
+            {'version': 2, 'height': None, 'strokes': []},
+            {'version': 1, 'height': -5, 'strokes': []},
+            {'version': 1, 'height': None, 'strokes': 'nope'},
+            {'version': 1, 'height': None, 'strokes': [{'id': 'a', 'color': 'x', 'width': 2, 'points': 'no'}]},
+            {'version': 1, 'height': None, 'strokes': [{'id': 'a', 'color': 'x', 'width': 2, 'points': [[1]]}]},
+            {'version': 1, 'height': None, 'strokes': [{'id': 'a', 'color': 'x', 'width': 2, 'points': [['a', 'b']]}]},
+            {'version': 1, 'height': None, 'strokes': [{'id': 'a', 'color': 'x', 'width': 0, 'points': []}]},
+            {'version': 1, 'height': None, 'strokes': [{'id': 'a', 'color': 'x', 'width': 2, 'points': [[1, 10**9]]}]},
+        ]
+        for payload in bad:
+            with self.subTest(payload=payload):
+                response = self.client.patch(self._detail(), {'drawing': payload}, format='json')
+                self.assertEqual(response.status_code, 400)
+
+        self.note.refresh_from_db()
+        self.assertEqual(self.note.drawing, {})
+
+    def test_too_many_strokes_are_rejected(self):
+        from apps.studyspace.api.serializers import MAX_DRAWING_STROKES
+
+        strokes = [
+            {'id': str(i), 'color': '#000', 'width': 2, 'points': [[0, 0]]}
+            for i in range(MAX_DRAWING_STROKES + 1)
+        ]
+        response = self.client.patch(
+            self._detail(), {'drawing': {'version': 1, 'height': None, 'strokes': strokes}}, format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_another_account_cannot_modify_it(self):
+        from apps.users.models import User
+
+        intruder = User.objects.create_user(
+            email="intruso@example.com", username="intruso", password="x"
+        )
+        self.client.force_authenticate(intruder)
+
+        response = self.client.patch(self._detail(), {'drawing': self.DRAWING}, format='json')
+        self.assertEqual(response.status_code, 404)
+
+        self.note.refresh_from_db()
+        self.assertEqual(self.note.drawing, {})
+
+
 class NoteReviewApiTests(APITestCase):
     URL = '/api/note-reviews/'
 

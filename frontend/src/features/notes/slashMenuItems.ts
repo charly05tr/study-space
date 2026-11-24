@@ -8,6 +8,7 @@ import { DEFAULT_TABLE } from './tableNodes';
 export const BLOCKS_GROUP = 'Blocks';
 export const ANNOTATIONS_GROUP = 'From your sources';
 export const ASSISTANT_GROUP = 'Assistant';
+export const TOOLS_GROUP = 'Tools';
 
 /**
  * How many annotations the menu offers at once. A studyspace accumulates
@@ -161,6 +162,26 @@ const AI_REVIEW_ITEM: SlashItem = {
   hint: 'Grammar, vocabulary & topic feedback',
   keywords: ['ai', 'review', 'feedback', 'grammar', 'revisar', 'corregir'],
   run: (chain) => chain,
+};
+
+/** Identifies the row that turns the pointer into a pen. */
+export const DRAW_KEY = 'draw';
+
+/** An action like the AI row: it inserts nothing, it switches the note into pen mode. */
+const DRAW_ITEM: SlashItem = {
+  key: DRAW_KEY,
+  group: TOOLS_GROUP,
+  title: 'Draw',
+  hint: 'Sketch over the note',
+  keywords: ['pen', 'sketch', 'whiteboard', 'freehand', 'doodle', 'paint', 'excalidraw'],
+  run: (chain) => chain,
+};
+
+export const filterDrawItems = (query: string): SlashItem[] => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [DRAW_ITEM];
+
+  return matches([DRAW_ITEM.title, ...DRAW_ITEM.keywords], needle) ? [DRAW_ITEM] : [];
 };
 
 /** Titles are unique in the catalogue, so they double as stable keys. */

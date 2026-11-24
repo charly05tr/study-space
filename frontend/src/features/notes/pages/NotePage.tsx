@@ -67,6 +67,7 @@ export const NotePage = () => {
         noteId={note.id}
         studyspaceId={note.studyspace}
         initialContent={note.content}
+        initialDrawing={note.drawing}
       />
     </article>
   );

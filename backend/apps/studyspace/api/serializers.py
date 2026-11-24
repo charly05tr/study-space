@@ -82,6 +82,71 @@ class StudyspaceDetailSerializer(serializers.ModelSerializer):
                   'notes', 'sources', 'references']
         
         
+MAX_DRAWING_STROKES = 2000
+MAX_DRAWING_POINTS = 100_000
+MAX_DRAWING_HEIGHT = 100_000
+MAX_DRAWING_COORDINATE = 100_000
+
+
+def _is_number(value):
+    # bool is an int subclass; True must not pass as a coordinate.
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def validate_drawing(value):
+    """
+    Accepts {"version": 1, "height": number|null, "strokes": [...]}, or an empty
+    dict for "no drawing". Bounded so a client cannot park arbitrary JSON (or a
+    huge one) in the row.
+    """
+    if value == {}:
+        return value
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Drawing must be an object.")
+
+    if value.get('version') != 1:
+        raise serializers.ValidationError("Unsupported drawing version.")
+
+    height = value.get('height')
+    if height is not None and not (_is_number(height) and 0 <= height <= MAX_DRAWING_HEIGHT):
+        raise serializers.ValidationError("Invalid drawing height.")
+
+    strokes = value.get('strokes')
+    if not isinstance(strokes, list) or len(strokes) > MAX_DRAWING_STROKES:
+        raise serializers.ValidationError("Invalid strokes list.")
+
+    total_points = 0
+    for stroke in strokes:
+        if not isinstance(stroke, dict):
+            raise serializers.ValidationError("Each stroke must be an object.")
+        if not isinstance(stroke.get('id'), str) or len(stroke['id']) > 64:
+            raise serializers.ValidationError("Invalid stroke id.")
+        if not isinstance(stroke.get('color'), str) or len(stroke['color']) > 64:
+            raise serializers.ValidationError("Invalid stroke color.")
+        width = stroke.get('width')
+        if not (_is_number(width) and 0 < width <= 100):
+            raise serializers.ValidationError("Invalid stroke width.")
+
+        points = stroke.get('points')
+        if not isinstance(points, list):
+            raise serializers.ValidationError("Stroke points must be a list.")
+        total_points += len(points)
+        if total_points > MAX_DRAWING_POINTS:
+            raise serializers.ValidationError("Drawing has too many points.")
+
+        for point in points:
+            if (
+                not isinstance(point, list)
+                or len(point) not in (2, 3)
+                or not all(_is_number(n) for n in point)
+                or abs(point[0]) > MAX_DRAWING_COORDINATE
+                or abs(point[1]) > MAX_DRAWING_COORDINATE
+            ):
+                raise serializers.ValidationError("Invalid point.")
+
+    return value
+
+
 class NoteCreateSerializer(serializers.ModelSerializer):
     images = serializers.ListField(
         child=serializers.ImageField(),
@@ -108,9 +173,13 @@ class NoteUpdateSerializer(serializers.ModelSerializer):
         required=False
     )
     
+    # Sent on its own (PATCH) so saving a drawing never carries the body, and
+    # vice versa.
+    drawing = serializers.JSONField(required=False, validators=[validate_drawing])
+
     class Meta:
         model = Note
-        fields = ['title', 'content', 'new_images', 'images_to_delete_ids']
+        fields = ['title', 'content', 'drawing', 'new_images', 'images_to_delete_ids']
         
 
 class NoteImageSerializer(serializers.ModelSerializer):
@@ -124,7 +193,7 @@ class NoteDetailSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Note
-        fields = ['id', 'title', 'content', 'studyspace', 'created_at', 'updated_at', 'images']
+        fields = ['id', 'title', 'content', 'drawing', 'studyspace', 'created_at', 'updated_at', 'images']
         
 
 class SourceSerializer(serializers.ModelSerializer):

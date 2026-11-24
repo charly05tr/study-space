@@ -8,13 +8,16 @@ import type { Annotation } from '../../annotations/types';
 import { noteExtensions } from '../editorExtensions';
 import { WritingReviewPanel } from '../../ai/components/WritingReviewPanel';
 import { useNoteAutosave } from '../hooks/useNoteAutosave';
+import { useNoteDrawingAutosave } from '../hooks/useNoteDrawingAutosave';
+import { normalizeDrawing } from '../drawing';
 import { extractPlainText, toEditorContent } from '../noteDocument';
 import { NoteEditorContext } from '../noteEditorContext';
 import { BlockLinkCommand } from '../blockLinkCommand';
 import { SlashCommand } from '../slashCommand';
 import { annotationToNodeAttrs } from '../slashMenuItems';
-import type { NoteDocument } from '../types';
+import type { NoteDocument, SaveStatus } from '../types';
 import { AnnotationPicker } from './AnnotationPicker';
+import { DrawingLayer } from './DrawingLayer';
 import { FormatBubbleMenu } from './FormatBubbleMenu';
 import { MathMenu } from './MathMenu';
 import { SaveIndicator } from './SaveIndicator';
@@ -23,12 +26,16 @@ import { TableMenu } from './TableMenu';
 /** Stable identity: `?? []` inline would rebuild the picker's list every render. */
 const NO_ANNOTATIONS: Annotation[] = [];
 
+const SAVE_PRIORITY: Record<SaveStatus, number> = { saved: 0, dirty: 1, saving: 2, error: 3 };
+
 interface BlockEditorProps {
   noteId: number;
   /** Scopes the citations the `/` menu offers. */
   studyspaceId: number;
   /** Note.content as returned by the API. `{}` for a fresh note. */
   initialContent: NoteDocument | null;
+  /** Note.drawing as returned by the API. `{}` for a note never drawn on. */
+  initialDrawing?: unknown;
   editable?: boolean;
   /** Override persistence. Only meant for tests and stories. */
   onSave?: (content: NoteDocument) => Promise<unknown>;
@@ -39,6 +46,7 @@ export const BlockEditor = ({
   noteId,
   studyspaceId,
   initialContent,
+  initialDrawing,
   editable = true,
   onSave,
   className,
@@ -66,6 +74,32 @@ export const BlockEditor = ({
   } | null>(null);
   const review = reviewState?.noteId === noteId ? reviewState : null;
   const editorRef = useRef<Editor | null>(null);
+
+  // Pen mode. The drawing has its own autosave and its own PATCH field, so it
+  // can never overwrite the text (or the reverse).
+  const [penActive, setPenActive] = useState(false);
+  const drawingSave = useNoteDrawingAutosave(noteId);
+  const seedDrawing = useMemo(() => normalizeDrawing(initialDrawing), [initialDrawing]);
+  const startDrawing = useCallback(() => setPenActive(true), []);
+  const stopDrawing = useCallback(() => setPenActive(false), []);
+
+  // Ctrl/Cmd+Shift+D toggles the pen. `code`, not `key`: Shift changes `key` to
+  // "D" and other layouts move the letter. Esc and Ctrl+Z are handled by the
+  // layer itself, only while the pen is on.
+  useEffect(() => {
+    if (!editable) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'KeyD' && event.shiftKey && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        setPenActive((current) => !current);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editable]);
+
   const openAiReview = useCallback(
     () =>
       setReviewState((previous) => ({
@@ -79,8 +113,8 @@ export const BlockEditor = ({
   // Reaches the `/` menu through the portal Tiptap renders it in, so the menu
   // can load its own citations instead of having them threaded in as options.
   const editorContext = useMemo(
-    () => ({ studyspaceId, openAnnotationPicker, openAiReview }),
-    [studyspaceId, openAnnotationPicker, openAiReview],
+    () => ({ studyspaceId, openAnnotationPicker, openAiReview, startDrawing }),
+    [studyspaceId, openAnnotationPicker, openAiReview, startDrawing],
   );
 
   // Shares react-query's cache with the menu's own hook, so opening the picker
@@ -170,7 +204,22 @@ export const BlockEditor = ({
     editorRef.current = editor;
   }, [editor]);
 
+  // Text editing is paused while drawing: the overlay already swallows the
+  // pointer, this stops keystrokes from typing into a document nobody is
+  // looking at. `false` = do not emit `update`, or entering pen mode would look
+  // like an edit and trigger a pointless save.
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(editable && !penActive, false);
+    if (penActive) editor.commands.blur();
+  }, [editor, editable, penActive]);
+
   if (!editor) return null;
+
+  // One indicator for both writers; the worst state wins.
+  const saveStatus: SaveStatus = [status, drawingSave.status].reduce((worst, next) =>
+    SAVE_PRIORITY[next] > SAVE_PRIORITY[worst] ? next : worst,
+  );
 
   return (
     // Width and centring belong to the page, not here: when this owned its own
@@ -181,14 +230,21 @@ export const BlockEditor = ({
             so the only persistent chrome is the save state. Translucent and
             sticky so the prose scrolls under it and stays legible. */}
         <div className="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm">
-          <SaveIndicator status={status} />
+          <SaveIndicator status={saveStatus} />
         </div>
 
         <FormatBubbleMenu editor={editor} />
         {/* All three are mutually exclusive — see their `shouldShow`. */}
         <TableMenu editor={editor} />
         <MathMenu editor={editor} />
-        <EditorContent editor={editor} />
+        <DrawingLayer
+          initialDrawing={seedDrawing}
+          active={penActive}
+          onExit={stopDrawing}
+          onChange={drawingSave.scheduleSave}
+        >
+          <EditorContent editor={editor} />
+        </DrawingLayer>
 
         {pickerQuery !== null && (
           <AnnotationPicker

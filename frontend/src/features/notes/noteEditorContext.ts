@@ -12,6 +12,8 @@ export interface NoteEditorContextValue {
   openAnnotationPicker: (query: string) => void;
   /** Opens the AI writing review for the note as it is right now. */
   openAiReview: () => void;
+  /** Turns the pointer into a pen so the user can draw over the note. */
+  startDrawing: () => void;
 }
 
 /**

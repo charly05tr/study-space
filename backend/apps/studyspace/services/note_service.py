@@ -36,13 +36,17 @@ class NoteService:
         # Actualizar datos
         for key, value in data.items():
             setattr(note, key, value) 
-        note.save()
-        
+        # Solo las columnas que el request trajo (mas updated_at, que auto_now
+        # no actualiza con update_fields). Un save() completo reescribia tambien
+        # `content` o `drawing` con la copia cargada al empezar el request, asi
+        # que un PATCH de texto y uno de dibujo en vuelo se pisaban en silencio.
+        note.save(update_fields=[*data.keys(), 'updated_at'])
+
         # Subir imagenes
         for image in new_images:
             url = self.image.upload(image=image)
             NoteImage.objects.create(url=url, note=note, alt=f'Image of note #{note.id}')
-        
+
         # Eliminar imagenes
         for image_id in images_to_delete_ids:
             note_image = NoteImage.objects.filter(id=image_id).first()
