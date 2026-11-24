@@ -35,6 +35,12 @@ import {
   type ShapeType,
   type StrokeType,
 } from "../shapes";
+import {
+  DEFAULT_SHAPE,
+  toolForKey,
+  type Tool,
+} from "../drawingTools";
+import { ShapeMenu } from "./ShapeMenu";
 
 const ERASER_RADIUS = 10;
 /** Past this distance from the viewport bottom the page follows the pen down. */
@@ -126,18 +132,6 @@ const StrokeShape = ({
   return <path d={strokeToPath(points)} {...common} />;
 };
 
-type Tool = "pen" | "eraser" | ShapeType;
-
-/** Toolbar order and the Excalidraw-style single-key shortcut of each tool. */
-const TOOLS: { tool: Tool; label: string; key: string }[] = [
-  { tool: "pen", label: "Pen", key: "p" },
-  { tool: "rect", label: "Rectangle", key: "r" },
-  { tool: "ellipse", label: "Ellipse", key: "o" },
-  { tool: "line", label: "Line", key: "l" },
-  { tool: "arrow", label: "Arrow", key: "a" },
-  { tool: "eraser", label: "Eraser", key: "e" },
-];
-
 /** What is being drawn right now: freehand samples, or a shape's two points. */
 interface LiveStroke {
   type: StrokeType;
@@ -180,6 +174,11 @@ export const DrawingLayer = ({
   );
   const [live, setLive] = useState<LiveStroke | null>(null);
   const [tool, setTool] = useState<Tool>("pen");
+  // Remembered separately from `tool`: the shapes button keeps showing the last
+  // shape even while the pen or eraser is active.
+  const [lastShape, setLastShape] = useState<ShapeType>(DEFAULT_SHAPE);
+  const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
+  const shapeMenuOpenRef = useRef(false);
   const [color, setColor] = useState<string>(DEFAULT_COLOR);
   const [width, setWidth] = useState<number>(DEFAULT_WIDTH);
 
@@ -202,6 +201,7 @@ export const DrawingLayer = ({
   const settingsRef = useRef({ tool, color, width });
   useEffect(() => {
     onChangeRef.current = onChange;
+    shapeMenuOpenRef.current = shapeMenuOpen;
     settingsRef.current = { tool, color, width };
   });
 
@@ -263,6 +263,13 @@ export const DrawingLayer = ({
     [],
   );
 
+  /** Every way of picking a tool goes through here so the shapes button stays in sync. */
+  const selectTool = useCallback((next: Tool) => {
+    setTool(next);
+    if (isShapeType(next)) setLastShape(next);
+    setShapeMenuOpen(false);
+  }, []);
+
   // Capture phase on window so Ctrl+Z reaches us before ProseMirror's history:
   // in pen mode it must undo strokes, not text.
   useEffect(() => {
@@ -271,6 +278,12 @@ export const DrawingLayer = ({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        // With the shapes dropdown open, Esc closes only the dropdown.
+        if (shapeMenuOpenRef.current) {
+          event.stopPropagation();
+          setShapeMenuOpen(false);
+          return;
+        }
         onExit();
         return;
       }
@@ -289,19 +302,24 @@ export const DrawingLayer = ({
       // modifier (Ctrl+R must still reload), and swallowed so the key cannot
       // reach ProseMirror.
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']"))
+      // The target can be the window or document (no `closest`), e.g. for a
+      // synthetic event, so it is checked before use.
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest("input, textarea, select, [contenteditable='true']")
+      )
         return;
-      const match = TOOLS.find((entry) => entry.key === event.key.toLowerCase());
+      const match = toolForKey(event.key);
       if (!match) return;
       event.preventDefault();
       event.stopPropagation();
-      setTool(match.tool);
+      selectTool(match.tool);
     };
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [active, onExit, undo]);
+  }, [active, onExit, undo, selectTool]);
 
   const eraseHere = (x: number, y: number) => {
     const session = erasingRef.current;
@@ -340,6 +358,7 @@ export const DrawingLayer = ({
     if (event.pointerType === "mouse" && event.button !== 0) return;
 
     event.preventDefault();
+    setShapeMenuOpen(false);
     event.currentTarget.setPointerCapture(event.pointerId);
 
     const rect = wrapRef.current.getBoundingClientRect();
@@ -518,19 +537,33 @@ export const DrawingLayer = ({
           aria-label="Drawing tools"
           className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-xs border border-rule bg-page px-3 py-2 shadow-sm"
         >
-          {TOOLS.map((entry) => (
-            <Button
-              key={entry.tool}
-              size="sm"
-              variant={tool === entry.tool ? "secondary" : "quiet"}
-              aria-pressed={tool === entry.tool}
-              aria-keyshortcuts={entry.key.toUpperCase()}
-              title={`${entry.label} (${entry.key.toUpperCase()})`}
-              onClick={() => setTool(entry.tool)}
-            >
-              {entry.label}
-            </Button>
-          ))}
+          <Button
+            size="sm"
+            variant={tool === "pen" ? "secondary" : "quiet"}
+            aria-pressed={tool === "pen"}
+            aria-keyshortcuts="P"
+            title="Pen (P)"
+            onClick={() => selectTool("pen")}
+          >
+            Pen
+          </Button>
+          <ShapeMenu
+            shape={lastShape}
+            active={isShapeType(tool)}
+            open={shapeMenuOpen}
+            onOpenChange={setShapeMenuOpen}
+            onSelect={selectTool}
+          />
+          <Button
+            size="sm"
+            variant={tool === "eraser" ? "secondary" : "quiet"}
+            aria-pressed={tool === "eraser"}
+            aria-keyshortcuts="E"
+            title="Eraser (E)"
+            onClick={() => selectTool("eraser")}
+          >
+            Eraser
+          </Button>
 
           <span className="mx-1 h-5 w-px bg-rule" aria-hidden />
 
