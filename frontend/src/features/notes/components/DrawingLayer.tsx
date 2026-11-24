@@ -17,11 +17,14 @@ import {
   PEN_WIDTHS,
   appendPoint,
   canAddStroke,
+  NO_BLEED,
   clampCoordinate,
+  computeBleed,
   eraseAt,
   growSurface,
   roundCoordinate,
   strokeToPath,
+  type Bleed,
   type NoteDrawing,
   type Stroke,
   type StrokePoint,
@@ -58,8 +61,8 @@ const ERASER_CURSOR =
   `<circle cx='11' cy='11' r='9' fill='none' stroke='black' stroke-width='1.5'/></svg>") 11 11, cell`;
 
 /** A shift-constrained end point can land outside the backend's bounds. */
-const clampPoint = ([x, y]: StrokePoint): StrokePoint => [
-  clampCoordinate(x),
+const clampPoint = ([x, y]: StrokePoint, minX: number): StrokePoint => [
+  clampCoordinate(x, minX),
   clampCoordinate(y),
 ];
 
@@ -172,6 +175,9 @@ export const DrawingLayer = ({
   const [surfaceWidth, setSurfaceWidth] = useState<number | null>(
     initialDrawing.width,
   );
+  // How far the surface reaches past the text column on each side; see computeBleed.
+  const [bleed, setBleed] = useState<Bleed>(NO_BLEED);
+  const bleedRef = useRef<Bleed>(NO_BLEED);
   const [live, setLive] = useState<LiveStroke | null>(null);
   const [tool, setTool] = useState<Tool>("pen");
   // Remembered separately from `tool`: the shapes button keeps showing the last
@@ -270,6 +276,41 @@ export const DrawingLayer = ({
     setShapeMenuOpen(false);
   }, []);
 
+  // The surface spans the whole area the note sits in (the page's main column),
+  // not just the 36em text column, so strokes are never cut at the column edge.
+  // Measured by ResizeObserver, whose first callback also runs on observe().
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const area = wrap?.closest("main") ?? wrap?.parentElement;
+    // Absent in non-browser test environments; the surface then just matches the column.
+    if (!wrap || !area || typeof ResizeObserver === "undefined") return;
+
+    const measure = () => {
+      const column = wrap.getBoundingClientRect();
+      const box = area.getBoundingClientRect();
+      const style = getComputedStyle(area);
+      const next = computeBleed(
+        column,
+        {
+          left: box.left,
+          right: box.right,
+          paddingLeft: parseFloat(style.paddingLeft) || 0,
+          paddingRight: parseFloat(style.paddingRight) || 0,
+        },
+        scrollRef.current?.scrollLeft ?? 0,
+      );
+      if (next.left === bleedRef.current.left && next.right === bleedRef.current.right)
+        return;
+      bleedRef.current = next;
+      setBleed(next);
+    };
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, []);
+
   // Capture phase on window so Ctrl+Z reaches us before ProseMirror's history:
   // in pen mode it must undo strokes, not text.
   useEffect(() => {
@@ -334,7 +375,9 @@ export const DrawingLayer = ({
 
   const growIfNeeded = (x: number, y: number, rect: DOMRect) => {
     const current = {
-      width: Math.max(rect.width, widthRef.current ?? 0),
+      // The surface already reaches `bleed.right` past the column, so growth
+      // only kicks in near the real right edge of the surface.
+      width: Math.max(rect.width + bleedRef.current.right, widthRef.current ?? 0),
       height: Math.max(rect.height, heightRef.current ?? 0),
     };
     const next = growSurface({ x, y }, current);
@@ -362,7 +405,8 @@ export const DrawingLayer = ({
     event.currentTarget.setPointerCapture(event.pointerId);
 
     const rect = wrapRef.current.getBoundingClientRect();
-    const x = clampCoordinate(event.clientX - rect.left);
+    const minX = -bleedRef.current.left;
+    const x = clampCoordinate(event.clientX - rect.left, minX);
     const y = clampCoordinate(event.clientY - rect.top);
 
     if (settingsRef.current.tool === "eraser") {
@@ -391,6 +435,7 @@ export const DrawingLayer = ({
     if (!liveRef.current && !erasingRef.current) return;
 
     const rect = wrapRef.current.getBoundingClientRect();
+    const minX = -bleedRef.current.left;
     // Coalesced events are the samples the browser merged into this one; using
     // them keeps fast strokes from turning into straight chords.
     const samples = event.nativeEvent.getCoalescedEvents?.();
@@ -398,7 +443,7 @@ export const DrawingLayer = ({
       samples && samples.length > 0 ? samples : [event.nativeEvent];
 
     for (const sample of events) {
-      const x = clampCoordinate(sample.clientX - rect.left);
+      const x = clampCoordinate(sample.clientX - rect.left, minX);
       const y = clampCoordinate(sample.clientY - rect.top);
 
       if (erasingRef.current) {
@@ -412,7 +457,7 @@ export const DrawingLayer = ({
                 type,
                 points: [
                   start,
-                  clampPoint(constrainShape(type, start, [x, y], sample.shiftKey)),
+                  clampPoint(constrainShape(type, start, [x, y], sample.shiftKey), minX),
                 ],
               }
             : { type, points: appendPoint(points, x, y) };
@@ -497,13 +542,28 @@ export const DrawingLayer = ({
     // Wider than the editor only once the user drew past its right edge. The
     // text column (the wrapper) never changes width; only this surface sticks
     // out, and the scroller around it keeps the page layout intact.
-    width: surfaceWidth ? `max(100%, ${surfaceWidth}px)` : undefined,
+    // Starts `bleed.left` before the column and ends `bleed.right` after it (or
+    // at the saved width, whichever is wider). Coordinates stay relative to the
+    // column: the <g> below shifts the origin back onto the column's left edge.
+    left: -bleed.left,
+    width: `max(calc(100% + ${bleed.left + bleed.right}px), ${(surfaceWidth ?? 0) + bleed.left}px)`,
     ...(active ? { cursor, touchAction: "none" } : {}),
   };
 
   return (
     <>
-      <div ref={scrollRef} className="overflow-x-auto">
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto"
+        // Negative margin plus equal padding: the scroller reaches the edges of
+        // the area while the text column inside it keeps exactly its width.
+        style={{
+          marginLeft: -bleed.left,
+          marginRight: -bleed.right,
+          paddingLeft: bleed.left,
+          paddingRight: bleed.right,
+        }}
+      >
         <div
           ref={wrapRef}
           className="relative"
@@ -524,8 +584,10 @@ export const DrawingLayer = ({
             onPointerUp={finishGesture}
             onPointerCancel={finishGesture}
           >
-            <StrokePaths strokes={strokes} />
-            {live && <StrokeShape stroke={{ ...live, color, width }} />}
+            <g transform={`translate(${bleed.left} 0)`}>
+              <StrokePaths strokes={strokes} />
+              {live && <StrokeShape stroke={{ ...live, color, width }} />}
+            </g>
           </svg>
         </div>
       </div>

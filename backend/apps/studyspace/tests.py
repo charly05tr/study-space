@@ -1607,6 +1607,15 @@ class NoteDrawingApiTests(APITestCase):
                     )
                     self.assertEqual(response.status_code, 400)
 
+    def test_negative_x_coordinates_round_trip(self):
+        # Strokes drawn left of the text column have negative x (the origin is
+        # the column's top-left).
+        drawing = self._with_stroke(points=[[-120.5, 10], [-30, 20]])
+        self.assertEqual(
+            self.client.patch(self._detail(), {'drawing': drawing}, format='json').status_code, 200
+        )
+        self.assertEqual(self.client.get(self._detail()).json()['drawing'], drawing)
+
     def test_invalid_width_is_rejected(self):
         for width in (-1, 10**9, 'wide', True, [100]):
             with self.subTest(width=width):

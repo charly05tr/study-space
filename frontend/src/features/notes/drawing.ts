@@ -267,6 +267,35 @@ export const canAddStroke = (strokes: Stroke[], extraPoints: number): boolean =>
   return used + extraPoints <= DRAWING_LIMITS.maxPoints;
 };
 
-/** Clamps to the backend's coordinate bound so one wild sample cannot 400 a save. */
-export const clampCoordinate = (value: number) =>
-  Math.max(0, Math.min(value, DRAWING_LIMITS.maxCoordinate));
+/**
+ * Clamps to the backend's coordinate bound so one wild sample cannot 400 a save.
+ * `min` is 0 for y (the surface starts at the editor's top) and the negative
+ * left bleed for x, so the pen can go left of the text column.
+ */
+export const clampCoordinate = (value: number, min = 0) =>
+  Math.max(min, Math.min(value, DRAWING_LIMITS.maxCoordinate));
+
+/** How far the drawing surface reaches past the text column on each side. */
+export interface Bleed {
+  left: number;
+  right: number;
+}
+
+export const NO_BLEED: Bleed = { left: 0, right: 0 };
+
+/**
+ * Space between the text column and the edges of the area the note lives in.
+ *
+ * The surface is as wide as that area, not as wide as the column, so strokes can
+ * be drawn anywhere across the page without being cut at the column edge. All
+ * values are viewport x positions; `scrollLeft` is added back to the column
+ * because a horizontally scrolled wrapper moves it left without moving the area.
+ */
+export const computeBleed = (
+  column: { left: number; right: number },
+  area: { left: number; right: number; paddingLeft: number; paddingRight: number },
+  scrollLeft = 0,
+): Bleed => ({
+  left: Math.max(0, Math.round(column.left + scrollLeft - (area.left + area.paddingLeft))),
+  right: Math.max(0, Math.round(area.right - area.paddingRight - (column.right + scrollLeft))),
+});

@@ -5,6 +5,8 @@ import {
   EMPTY_DRAWING,
   appendPoint,
   canAddStroke,
+  clampCoordinate,
+  computeBleed,
   eraseAt,
   growHeight,
   growSurface,
@@ -199,5 +201,36 @@ describe('canAddStroke', () => {
   it('refuses when the point budget would be exceeded', () => {
     expect(canAddStroke([], DRAWING_LIMITS.maxPoints + 1)).toBe(false);
     expect(canAddStroke([], DRAWING_LIMITS.maxPoints)).toBe(true);
+  });
+});
+
+describe('computeBleed', () => {
+  const area = { left: 300, right: 1300, paddingLeft: 24, paddingRight: 24 };
+
+  it('is the space between the column and the padded edges of the area', () => {
+    // A 576px column centred in a 952px content box.
+    expect(computeBleed({ left: 512, right: 1088 }, area)).toEqual({ left: 188, right: 188 });
+  });
+
+  it('is zero when the column fills the area and never negative', () => {
+    expect(computeBleed({ left: 324, right: 1276 }, area)).toEqual({ left: 0, right: 0 });
+    expect(computeBleed({ left: 310, right: 1290 }, area)).toEqual({ left: 0, right: 0 });
+  });
+
+  it('ignores horizontal scrolling of the wrapper', () => {
+    // Scrolled 50px: the column moved left by 50 but the bleed is unchanged.
+    expect(computeBleed({ left: 462, right: 1038 }, area, 50)).toEqual({ left: 188, right: 188 });
+  });
+});
+
+describe('clampCoordinate', () => {
+  it('floors at zero by default and at a negative minimum for x', () => {
+    expect(clampCoordinate(-40)).toBe(0);
+    expect(clampCoordinate(-40, -188)).toBe(-40);
+    expect(clampCoordinate(-500, -188)).toBe(-188);
+  });
+
+  it('caps at the backend bound', () => {
+    expect(clampCoordinate(1e9)).toBe(DRAWING_LIMITS.maxCoordinate);
   });
 });
