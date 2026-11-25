@@ -490,3 +490,178 @@ class NoteReview(models.Model):
 
     def __str__(self):
         return f"Review of note {self.note_id} ({self.created_at:%Y-%m-%d %H:%M})"
+
+
+class Quiz(models.Model):
+    """A set of questions about a studyspace, AI-generated or written by hand.
+
+    Generation happens in the client (the user's AI key never reaches the
+    server): the server only stores what it is sent. Drafts are work in
+    progress and stay out of study and review.
+    """
+
+    class Origin(models.TextChoices):
+        AI = 'ai', 'AI generated'
+        MANUAL = 'manual', 'Written by hand'
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        PUBLISHED = 'published', 'Published'
+
+    studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='quizzes')
+
+    title = models.CharField(max_length=200)
+    description = models.CharField(max_length=1000, blank=True, default='')
+    origin = models.CharField(max_length=10, choices=Origin.choices, default=Origin.MANUAL)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
+
+    # What the user asked the model for. Blank for manual quizzes.
+    prompt = models.TextField(blank=True, default='')
+    language = models.CharField(max_length=50, blank=True, default='')
+    # Model id used to generate it (e.g. a Gemini model). Blank for manual quizzes.
+    model = models.CharField(max_length=100, blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['studyspace', 'status']),
+        ]
+
+    def __str__(self):
+        return f"Quiz {self.title}"
+
+
+class Question(models.Model):
+    """One question of a quiz.
+
+    `correct_answer` depends on `question_type` (validated in the serializer):
+      multiple_choice -> int, index into `options`
+      true_false      -> bool
+      short_answer    -> str, the reference answer (self-assessed by the user)
+    """
+
+    class QuestionType(models.TextChoices):
+        MULTIPLE_CHOICE = 'multiple_choice', 'Multiple choice'
+        TRUE_FALSE = 'true_false', 'True or false'
+        SHORT_ANSWER = 'short_answer', 'Short answer'
+
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='questions')
+    position = models.PositiveIntegerField(default=0)
+
+    question_type = models.CharField(max_length=20, choices=QuestionType.choices)
+    prompt = models.TextField()
+    options = models.JSONField(default=list, blank=True)
+    correct_answer = models.JSONField(null=True, blank=True, default=None)
+    explanation = models.TextField(blank=True, default='')
+
+    # The highlight or note the question came from. Deleting it must not delete
+    # the question, which stands on its own.
+    annotation = models.ForeignKey(
+        Annotation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='questions',
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['position', 'id']
+        indexes = [
+            models.Index(fields=['quiz', 'position']),
+        ]
+
+    def __str__(self):
+        return f"Question {self.pk} of quiz {self.quiz_id}"
+
+
+class Flashcard(models.Model):
+    """A spaced-repetition card. It belongs to the studyspace, not to a quiz.
+
+    When it comes from a question the content is an INDEPENDENT COPY: editing
+    or deleting the question never touches the card and vice versa. `question`
+    only remembers where it came from (and makes conversion idempotent).
+
+    The scheduling fields mirror the FSRS card. They survive edits of
+    front/back; only the explicit reset-progress action clears them.
+    """
+
+    class State(models.IntegerChoices):
+        # FSRS has no "new" state: a card never reviewed is stored here as NEW
+        # and handed to the scheduler as a fresh learning card.
+        NEW = 0, 'New'
+        LEARNING = 1, 'Learning'
+        REVIEW = 2, 'Review'
+        RELEARNING = 3, 'Relearning'
+
+    studyspace = models.ForeignKey(Studyspace, on_delete=models.CASCADE, related_name='flashcards')
+    question = models.ForeignKey(
+        Question,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='flashcards',
+    )
+
+    front = models.TextField()
+    back = models.TextField()
+
+    # Scheduling state (FSRS)
+    state = models.PositiveSmallIntegerField(choices=State.choices, default=State.NEW)
+    step = models.PositiveSmallIntegerField(null=True, blank=True)
+    stability = models.FloatField(null=True, blank=True)
+    difficulty = models.FloatField(null=True, blank=True)
+    due = models.DateTimeField(default=timezone.now, db_index=True)
+    last_review = models.DateTimeField(null=True, blank=True)
+    reps = models.PositiveIntegerField(default=0)
+    lapses = models.PositiveIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['due', 'id']
+        constraints = [
+            # One card per origin question. NULLs are not equal to each other, so
+            # cards without an origin (or whose question was deleted) are free.
+            models.UniqueConstraint(fields=['question'], name='unique_flashcard_per_question'),
+        ]
+        indexes = [
+            # The due queue: "this space, due before now, oldest first".
+            models.Index(fields=['studyspace', 'due'], name='flashcard_space_due_idx'),
+        ]
+
+    def __str__(self):
+        return f"Flashcard {self.pk}"
+
+
+class ReviewLog(models.Model):
+    """One rating given to a flashcard. Enough to audit, undo and chart."""
+
+    class Rating(models.IntegerChoices):
+        AGAIN = 1, 'Again'
+        HARD = 2, 'Hard'
+        GOOD = 3, 'Good'
+        EASY = 4, 'Easy'
+
+    flashcard = models.ForeignKey(Flashcard, on_delete=models.CASCADE, related_name='review_logs')
+
+    rating = models.PositiveSmallIntegerField(choices=Rating.choices)
+    reviewed_at = models.DateTimeField()
+    state_before = models.PositiveSmallIntegerField(choices=Flashcard.State.choices)
+    due_before = models.DateTimeField()
+    due_after = models.DateTimeField()
+
+    class Meta:
+        ordering = ['-reviewed_at', '-id']
+        indexes = [
+            models.Index(fields=['flashcard', 'reviewed_at']),
+        ]
+
+    def __str__(self):
+        return f"Review of flashcard {self.flashcard_id} ({self.get_rating_display()})"
