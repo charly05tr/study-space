@@ -20,6 +20,8 @@ import { SessionsPage } from '../features/sessions/pages/SessionsPage';
 import { PlanPage } from '../features/planning/pages/PlanPage';
 import { ReviewsPage } from '../features/ai/pages/ReviewsPage';
 import { ProfilePage } from '../features/profile/pages/ProfilePage';
+import { QuizzesPage } from '../features/quiz/pages/QuizzesPage';
+import { QuizEditorPage } from '../features/quiz/pages/QuizEditorPage';
 import { NotePage } from '../features/notes/pages/NotePage';
 import { LazyGraphPage } from './LazyGraphPage';
 
@@ -73,6 +75,9 @@ export const router = createBrowserRouter([
           { path: '/studyspace/:studyspaceId/plan', element: <PlanPage /> },
           // Nested like the plan: the sidebar keeps showing this studyspace.
           { path: '/studyspace/:studyspaceId/reviews', element: <ReviewsPage /> },
+          // Nested like the plan: the sidebar keeps showing this studyspace.
+          { path: '/studyspace/:studyspaceId/quizzes', element: <QuizzesPage /> },
+          { path: '/studyspace/:studyspaceId/quizzes/:quizId', element: <QuizEditorPage /> },
           // El editor es escritura, no lectura: va en AppLayout como el hub, no
           // en ReaderLayout.
           { path: '/note/:noteId', element: <NotePage /> },

@@ -73,6 +73,18 @@ export const StudyspaceNav = () => {
         Map
       </NavLink>
 
+      <NavLink
+        to={`/studyspace/${studyspace.id}/quizzes`}
+        className={({ isActive }) =>
+          cn(
+            'block border-l-2 py-1 pl-3 font-heading text-xs uppercase tracking-[0.14em] transition-colors',
+            isActive ? 'border-primary text-ink' : 'border-transparent text-muted hover:text-ink',
+          )
+        }
+      >
+        Quizzes
+      </NavLink>
+
       <Section title="Notes" count={studyspace.notes.length}>
         {studyspace.notes.length === 0 ? (
           <p className="pl-3 text-sm text-muted/70">None yet</p>
