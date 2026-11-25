@@ -164,6 +164,15 @@ const QuizEditor = ({ quiz }: { quiz: Quiz }) => {
             </div>
           </div>
 
+          {published && canPublish && (
+            <Link
+              to={`/studyspace/${quiz.studyspace}/quizzes/${quiz.id}/study`}
+              className="inline-flex items-center justify-center rounded-xs border border-primary bg-primary px-5 py-2.5 font-heading text-sm uppercase tracking-[0.14em] text-on-primary transition-colors duration-150 hover:border-primary-400 hover:bg-primary-400"
+            >
+              Study
+            </Link>
+          )}
+
           {!published && (
             <div className="flex flex-col items-end gap-1">
               <Button

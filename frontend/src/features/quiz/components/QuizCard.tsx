@@ -22,9 +22,19 @@ export const QuizCard = ({ quiz, deleting, onDelete }: QuizCardProps) => (
             {quiz.title}
           </Link>
         </CardTitle>
-        <ConfirmButton confirmLabel="Delete quiz?" loading={deleting} onConfirm={onDelete}>
-          Delete
-        </ConfirmButton>
+        <div className="flex shrink-0 items-center gap-1">
+          {quiz.status === 'published' && quiz.question_count > 0 && (
+            <Link
+              to={`/studyspace/${quiz.studyspace}/quizzes/${quiz.id}/study`}
+              className="inline-flex items-center justify-center rounded-xs border border-primary bg-primary px-3 py-1.5 font-heading text-xs uppercase tracking-[0.14em] text-on-primary transition-colors duration-150 hover:border-primary-400 hover:bg-primary-400"
+            >
+              Study
+            </Link>
+          )}
+          <ConfirmButton confirmLabel="Delete quiz?" loading={deleting} onConfirm={onDelete}>
+            Delete
+          </ConfirmButton>
+        </div>
       </div>
 
       {quiz.description && <p className="text-sm text-muted">{quiz.description}</p>}
