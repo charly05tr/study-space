@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { questionsApi } from '../api/quizzes.api';
+import type { PositionPatch } from '../questionForm';
 import type { CreateQuestionPayload, UpdateQuestionPayload } from '../types';
 import { quizQueryKey, quizzesRootKey } from './useQuizzes';
 
@@ -31,6 +32,20 @@ export const useUpdateQuestion = (quizId: number) => {
     mutationFn: ({ questionId, payload }: { questionId: number; payload: UpdateQuestionPayload }) =>
       questionsApi.update(questionId, payload),
     onSuccess: refresh,
+  });
+};
+
+/**
+ * Applies the position patches of one move. The API has no reorder action, so
+ * each affected question is PATCHed on its own; `position` is a plain field.
+ */
+export const useMoveQuestion = (quizId: number) => {
+  const refresh = useRefreshQuiz(quizId);
+  return useMutation({
+    mutationFn: (patches: PositionPatch[]) =>
+      Promise.all(patches.map(({ id, position }) => questionsApi.update(id, { position }))),
+    // Also on failure: one of two PATCHes may have landed, so the list is stale either way.
+    onSettled: refresh,
   });
 };
 
