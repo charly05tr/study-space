@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from './ui/cn';
 import { SkeletonText } from './ui';
+import { useFlashcardStats } from '../features/flashcards/hooks/useFlashcards';
 import { useActiveStudyspace } from '../features/studyspaces/hooks/useActiveStudyspace';
 
 const itemClasses = ({ isActive }: { isActive: boolean }) =>
@@ -22,6 +23,32 @@ const Section = ({ title, count, children }: {
     {children}
   </div>
 );
+
+/** Flashcards entry with how many reviewed cards are overdue, when there are any. */
+const FlashcardsNavLink = ({ studyspaceId }: { studyspaceId: number }) => {
+  const stats = useFlashcardStats(studyspaceId);
+  const due = stats.data?.due ?? 0;
+
+  return (
+    <NavLink
+      to={`/studyspace/${studyspaceId}/flashcards`}
+      className={({ isActive }) =>
+        cn(
+          'flex items-baseline justify-between gap-2 border-l-2 py-1 pl-3 font-heading text-xs uppercase tracking-[0.14em] transition-colors',
+          isActive ? 'border-primary text-ink' : 'border-transparent text-muted hover:text-ink',
+        )
+      }
+    >
+      <span>Flashcards</span>
+      {due > 0 && (
+        <span className="text-primary-ink">
+          {due}
+          <span className="sr-only"> due</span>
+        </span>
+      )}
+    </NavLink>
+  );
+};
 
 /**
  * The contents of the studyspace you are currently inside.
@@ -84,6 +111,8 @@ export const StudyspaceNav = () => {
       >
         Quizzes
       </NavLink>
+
+      <FlashcardsNavLink studyspaceId={studyspace.id} />
 
       <Section title="Notes" count={studyspace.notes.length}>
         {studyspace.notes.length === 0 ? (
