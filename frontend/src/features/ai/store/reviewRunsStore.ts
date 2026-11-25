@@ -1,13 +1,12 @@
 import { create } from 'zustand';
 import { queryClient } from '../../../config/queryClient';
 import { useAuthStore } from '../../auth/store/authStore';
-import { GeminiError, isAbortError, streamReviewWriting } from '../api/gemini.api';
+import { isAbortError, streamReviewWriting } from '../api/gemini.api';
 import { noteReviewsApi } from '../api/noteReviews.api';
-import { pickDefaultModel } from '../defaultModel';
+import { resolveModel } from '../resolveModel';
 import { noteReviewsQueryKey, studyspaceReviewsRootKey } from '../hooks/useNoteReviews';
 import { readApiKey } from '../readApiKey';
 import type { PartialWritingReview, SavedWritingReview, WritingReview } from '../types';
-import { useAiSettingsStore } from './aiSettingsStore';
 
 /**
  * Review runs live here, not in the panel, so they survive the panel closing and
@@ -109,16 +108,7 @@ export const useReviewRunsStore = create<ReviewRunsState>()((set, get) => {
     let result: WritingReview;
     let selected: string;
     try {
-      const { encryptedKey, model, availableModels } = useAiSettingsStore.getState();
-      if (!encryptedKey) throw new GeminiError('Add your Gemini API key in your profile first.');
-
-      // The saved model can be gone from the list (retired, or never refreshed).
-      const picked =
-        model && availableModels.some((option) => option.name === model)
-          ? model
-          : pickDefaultModel(availableModels);
-      if (!picked) throw new GeminiError('No Gemini model is available. Check your key in your profile.');
-      selected = picked;
+      selected = resolveModel();
 
       result = await streamReviewWriting(await readApiKey(), selected, text, {
         signal,

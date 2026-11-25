@@ -12,6 +12,8 @@ import { getApiErrorMessage } from '../../../lib/apiError';
 import { useStudyspace } from '../../studyspaces/hooks/useStudyspace';
 import { NewQuizForm } from '../components/NewQuizForm';
 import { QuizCard } from '../components/QuizCard';
+import { QuizRunStatus } from '../components/QuizRunStatus';
+import { useQuizGeneration } from '../hooks/useQuizGeneration';
 import { useDeleteQuiz, useStudyspaceQuizzes } from '../hooks/useQuizzes';
 
 const backLinkClasses =
@@ -26,6 +28,7 @@ export const QuizzesPage = () => {
   const studyspace = useStudyspace(id);
   const quizzes = useStudyspaceQuizzes(id);
   const remove = useDeleteQuiz(id);
+  const { run, cancel, dismiss, retrySave } = useQuizGeneration(id);
 
   const items = quizzes.data ?? [];
 
@@ -67,11 +70,28 @@ export const QuizzesPage = () => {
             <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
               New quiz
             </Button>
+            <Link
+              to={`/studyspace/${id}/quizzes/generate`}
+              className="inline-flex items-center justify-center rounded-xs border border-primary bg-primary px-3 py-1.5 font-heading text-xs uppercase tracking-[0.14em] text-on-primary transition-colors duration-150 hover:border-primary-400 hover:bg-primary-400"
+            >
+              Generate with AI
+            </Link>
           </div>
         </div>
 
         <Divider ornament className="max-w-40" />
       </header>
+
+      {/* A generation started on the generator keeps running after leaving it. */}
+      {run && (
+        <QuizRunStatus
+          studyspaceId={id}
+          run={run}
+          onCancel={() => cancel(id)}
+          onDismiss={() => dismiss(id)}
+          onRetrySave={() => retrySave(id)}
+        />
+      )}
 
       {creating && <NewQuizForm studyspaceId={id} onCancel={() => setCreating(false)} />}
 
