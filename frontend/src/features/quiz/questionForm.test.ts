@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   addOption,
+  changeType,
   draftFromQuestion,
+  hasAnswerContent,
   draftToInput,
   emptyDraft,
   hasErrors,
@@ -189,5 +191,111 @@ describe('movePatches', () => {
       { id: 3, position: 1 },
       { id: 2, position: 2 },
     ]);
+  });
+});
+
+describe('changeType', () => {
+  const original = mcDraft({ options: ['Page table', 'TLB', 'Cache'], correctIndex: 2, explanation: 'why' });
+
+  it('carries the prompt and explanation, and clears every answer field', () => {
+    const next = changeType(original, 'true_false', original);
+    expect(next).toEqual({
+      ...emptyDraft('true_false'),
+      prompt: original.prompt,
+      explanation: 'why',
+    });
+  });
+
+  it('restores what the question was loaded with when switching back', () => {
+    const away = changeType(original, 'short_answer', original);
+    const edited = { ...away, prompt: 'Edited prompt', answer: 'typed' };
+    const back = changeType(edited, 'multiple_choice', original);
+    expect(back.options).toEqual(['Page table', 'TLB', 'Cache']);
+    expect(back.correctIndex).toBe(2);
+    expect(back.prompt).toBe('Edited prompt');
+    expect(back.answer).toBe('');
+  });
+
+  it('returns the same draft when the type does not change', () => {
+    expect(changeType(original, 'multiple_choice', original)).toBe(original);
+  });
+});
+
+describe('hasAnswerContent', () => {
+  it('only looks at the fields of the current type', () => {
+    expect(hasAnswerContent(emptyDraft('multiple_choice'))).toBe(false);
+    expect(hasAnswerContent(mcDraft())).toBe(true);
+    expect(hasAnswerContent({ ...emptyDraft('true_false'), trueFalse: false })).toBe(true);
+    expect(hasAnswerContent({ ...emptyDraft('short_answer'), answer: '  ' })).toBe(false);
+    // Stale multiple choice values do not count for a short answer draft.
+    expect(hasAnswerContent({ ...mcDraft(), type: 'short_answer' })).toBe(false);
+  });
+});
+
+describe('draftToInput after a type switch', () => {
+  const question: Question = {
+    id: 7,
+    quiz: 1,
+    position: 0,
+    type: 'multiple_choice',
+    prompt: 'Which?',
+    options: ['A', 'B', 'C'],
+    correct_answer: 1,
+    explanation: '',
+    annotation: 12,
+    created_at: '',
+    updated_at: '',
+  };
+
+  it('sends no options and a boolean when a multiple choice question becomes true/false', () => {
+    const original = draftFromQuestion(question);
+    const draft = { ...changeType(original, 'true_false', original), trueFalse: true };
+    expect(draftToInput(draft, question.annotation)).toEqual({
+      type: 'true_false',
+      prompt: 'Which?',
+      explanation: '',
+      annotation: 12,
+      options: [],
+      correct_answer: true,
+    });
+  });
+
+  it('sends the reference text and no options for short answer', () => {
+    const original = draftFromQuestion(question);
+    const draft = { ...changeType(original, 'short_answer', original), answer: ' because ' };
+    const input = draftToInput(draft, null);
+    expect(input.options).toEqual([]);
+    expect(input.correct_answer).toBe('because');
+  });
+
+  it('sends options and the index together when a short answer becomes multiple choice', () => {
+    const sa = draftFromQuestion({ ...question, type: 'short_answer', options: [], correct_answer: 'ref' });
+    const draft = { ...changeType(sa, 'multiple_choice', sa), options: ['x', 'y'], correctIndex: 1 };
+    expect(hasErrors(validateDraft(draft))).toBe(false);
+    expect(draftToInput(draft, null)).toMatchObject({
+      type: 'multiple_choice',
+      options: ['x', 'y'],
+      correct_answer: 1,
+    });
+  });
+
+  it('never leaks stale values from another type into the payload', () => {
+    const stale: QuestionDraft = {
+      ...emptyDraft('true_false'),
+      prompt: 'p',
+      trueFalse: false,
+      options: ['leftover', 'options'],
+      correctIndex: 1,
+      answer: 'leftover text',
+    };
+    const input = draftToInput(stale, null);
+    expect(input.options).toEqual([]);
+    expect(input.correct_answer).toBe(false);
+  });
+
+  it('blocks a switched question until its new answer is filled in', () => {
+    const original = draftFromQuestion(question);
+    const draft = changeType(original, 'true_false', original);
+    expect(validateDraft(draft).correct).toBeDefined();
   });
 });

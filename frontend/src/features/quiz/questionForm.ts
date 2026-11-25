@@ -53,7 +53,35 @@ export const draftFromQuestion = (question: Question): QuestionDraft => {
   return draft;
 };
 
-export const canAddOption = (draft: QuestionDraft): boolean => draft.options.length < MAX_OPTIONS;
+/** True when the fields that belong to the draft's current type hold something worth keeping. */
+export const hasAnswerContent = (draft: QuestionDraft): boolean => {
+  if (draft.type === 'multiple_choice') {
+    return draft.correctIndex !== null || draft.options.some((option) => option.trim() !== '');
+  }
+  if (draft.type === 'true_false') return draft.trueFalse !== null;
+  return draft.answer.trim() !== '';
+};
+
+/**
+ * Switches a draft to another type. The prompt and explanation carry over; the
+ * answer fields do not, because an option index, a boolean and a reference text
+ * mean nothing to each other, and stale values from the old type must never
+ * ride along in the payload.
+ *
+ * Switching back to the type the question was loaded with restores what it had,
+ * so a slip of the select costs nothing.
+ */
+export const changeType = (
+  draft: QuestionDraft,
+  type: QuestionType,
+  original: QuestionDraft,
+): QuestionDraft => {
+  if (type === draft.type) return draft;
+  const shared = { prompt: draft.prompt, explanation: draft.explanation };
+  return type === original.type ? { ...original, ...shared } : { ...emptyDraft(type), ...shared };
+};
+
+export const canAddOption =(draft: QuestionDraft): boolean => draft.options.length < MAX_OPTIONS;
 export const canRemoveOption = (draft: QuestionDraft): boolean =>
   draft.options.length > MIN_OPTIONS;
 

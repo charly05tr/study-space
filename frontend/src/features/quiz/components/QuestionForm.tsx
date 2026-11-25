@@ -13,7 +13,9 @@ import {
   addOption,
   canAddOption,
   canRemoveOption,
+  changeType,
   draftToInput,
+  hasAnswerContent,
   hasErrors,
   removeOption,
   setOption,
@@ -53,7 +55,20 @@ export const QuestionForm = ({
 
   const errors: DraftErrors = attempted ? validateDraft(draft) : {};
 
+  // Said out loud when a type switch throws away answer fields the user had filled in.
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
+
   const update = (changes: Partial<QuestionDraft>) => setDraft((current) => ({ ...current, ...changes }));
+
+  const handleTypeChange = (type: QuestionType) => {
+    const restores = type === initial.type;
+    setResetNotice(
+      hasAnswerContent(draft) && !restores
+        ? `Switched to ${QUESTION_TYPE_LABELS[type]}: the previous answer fields were cleared.`
+        : null,
+    );
+    setDraft(changeType(draft, type, initial));
+  };
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -71,7 +86,13 @@ export const QuestionForm = ({
       <Select
         label="Type"
         value={draft.type}
-        onChange={(event) => update({ type: event.target.value as QuestionType })}
+        hint={
+          resetNotice ??
+          (initial.type !== draft.type
+            ? `Switch back to ${QUESTION_TYPE_LABELS[initial.type]} to restore its answer.`
+            : undefined)
+        }
+        onChange={(event) => handleTypeChange(event.target.value as QuestionType)}
       >
         {QUESTION_TYPES.map((type) => (
           <option key={type} value={type}>
@@ -79,6 +100,10 @@ export const QuestionForm = ({
           </option>
         ))}
       </Select>
+
+      <p role="status" className="sr-only">
+        {resetNotice}
+      </p>
 
       <Textarea
         label="Question"
