@@ -14,6 +14,10 @@ interface QuestionItemProps {
   onEdit: () => void;
   onDelete: () => void;
   onMove: (direction: -1 | 1) => void;
+  /** Whether a flashcard already copies this question. */
+  hasFlashcard?: boolean;
+  /** Checkbox for converting the question to a flashcard; omitted hides it. */
+  selection?: { selected: boolean; disabled: boolean; onToggle: () => void };
 }
 
 const answerText = (question: Question): string =>
@@ -34,12 +38,25 @@ export const QuestionItem = ({
   onEdit,
   onDelete,
   onMove,
+  hasFlashcard = false,
+  selection,
 }: QuestionItemProps) => (
   <li className="flex flex-col gap-3 border-b border-rule py-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-2">
+        {selection && (
+          <input
+            type="checkbox"
+            className="size-4 shrink-0 accent-primary"
+            checked={selection.selected}
+            disabled={selection.disabled}
+            aria-label={`Select question ${number} for flashcards`}
+            onChange={selection.onToggle}
+          />
+        )}
         <span className="font-heading text-sm text-ink">Q{number}</span>
         <Badge>{QUESTION_TYPE_LABELS[question.type]}</Badge>
+        {hasFlashcard && <Badge variant="success">Has flashcard</Badge>}
         {origin && (
           <Badge variant="primary">
             {origin.annotation_type === 'note' ? 'Note' : 'Highlight'} · {origin.source_title} · p.{' '}

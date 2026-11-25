@@ -9,9 +9,13 @@ import {
   FieldError,
   Skeleton,
   SkeletonText,
+  useNotification,
 } from '../../../components/ui';
 import { getApiErrorMessage } from '../../../lib/apiError';
 import { useStudyspaceAnnotations } from '../../annotations/hooks/useAnnotations';
+import { summarizeConversion } from '../../flashcards/conversion';
+import { useConvertQuestions, useStudyspaceFlashcards } from '../../flashcards/hooks/useFlashcards';
+import { ConvertQuestionsBar } from '../components/ConvertQuestionsBar';
 import { QuestionForm } from '../components/QuestionForm';
 import { QuestionItem } from '../components/QuestionItem';
 import { QuizDetailsForm } from '../components/QuizDetailsForm';
@@ -86,6 +90,18 @@ const QuizEditor = ({ quiz }: { quiz: Quiz }) => {
   const remove = useDeleteQuestion(quiz.id);
   const move = useMoveQuestion(quiz.id);
 
+  const flashcards = useStudyspaceFlashcards(quiz.studyspace);
+  const convert = useConvertQuestions();
+  const { notify } = useNotification();
+  const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
+
+  // Questions a flashcard already copies: the server would skip them anyway, so
+  // they are not offered. Unknown (still loading or failed) means none known.
+  const converted = useMemo(
+    () => new Set((flashcards.data ?? []).flatMap((card) => (card.question === null ? [] : [card.question]))),
+    [flashcards.data],
+  );
+
   const origins = useMemo(
     () => new Map((annotations.data ?? []).map((annotation) => [annotation.id, annotation])),
     [annotations.data],
@@ -98,6 +114,34 @@ const QuizEditor = ({ quiz }: { quiz: Quiz }) => {
   const canPublish = questions.length > 0;
 
   const close = () => setEditing(null);
+
+  const selectable = questions.filter((question) => !converted.has(question.id));
+  // Re-derived from the live list: a deleted or just-converted question drops out.
+  const chosen = selectable.filter((question) => selected.has(question.id));
+  const convertBlocked = published ? null : 'Publish the quiz to convert its questions.';
+
+  const toggleQuestion = (questionId: number) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (!next.delete(questionId)) next.add(questionId);
+      return next;
+    });
+
+  const toggleAll = () =>
+    setSelected(
+      chosen.length === selectable.length ? new Set() : new Set(selectable.map((q) => q.id)),
+    );
+
+  const handleConvert = () =>
+    convert.mutate(
+      chosen.map((question) => question.id),
+      {
+        onSuccess: (result) => {
+          setSelected(new Set());
+          notify(summarizeConversion(result));
+        },
+      },
+    );
 
   return (
     <>
@@ -171,6 +215,18 @@ const QuizEditor = ({ quiz }: { quiz: Quiz }) => {
           </p>
         )}
 
+        {questions.length > 0 && (
+          <ConvertQuestionsBar
+            selectableCount={selectable.length}
+            selectedCount={chosen.length}
+            converting={convert.isPending}
+            disabledReason={convertBlocked}
+            onToggleAll={toggleAll}
+            onConvert={handleConvert}
+          />
+        )}
+        {convert.isError && <FieldError message={getApiErrorMessage(convert.error)} />}
+
         {editing === 'new' && (
           <QuestionForm
             initial={emptyDraft()}
@@ -214,6 +270,12 @@ const QuizEditor = ({ quiz }: { quiz: Quiz }) => {
                   isFirst={index === 0}
                   isLast={index === questions.length - 1}
                   busy={busy}
+                  hasFlashcard={converted.has(question.id)}
+                  selection={{
+                    selected: selected.has(question.id) && !converted.has(question.id),
+                    disabled: !published || converted.has(question.id) || convert.isPending,
+                    onToggle: () => toggleQuestion(question.id),
+                  }}
                   onEdit={() => {
                     create.reset();
                     update.reset();
