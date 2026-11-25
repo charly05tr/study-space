@@ -67,6 +67,7 @@ for pkg in (
     'celery',
     'kombu',
     'cloudinary',
+    'fsrs',
 ):
     hiddenimports += collect_submodules(pkg)
     datas += collect_data_files(pkg)

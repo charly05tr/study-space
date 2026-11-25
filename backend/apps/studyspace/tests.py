@@ -1,7 +1,7 @@
 import re
 import shutil
 import tempfile
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import fitz
@@ -1888,3 +1888,172 @@ class NoteReviewApiTests(APITestCase):
         self._create()
         self.note.delete()
         self.assertEqual(NoteReview.objects.count(), 0)
+
+
+class FsrsSchedulerTests(SimpleTestCase):
+    NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    def setUp(self):
+        from apps.studyspace.services.fsrs_scheduler import FsrsScheduler
+
+        self.scheduler = FsrsScheduler()
+
+    def test_new_card_is_due_immediately_and_unreviewed(self):
+        card = self.scheduler.new_card(self.NOW)
+        self.assertEqual((card.state, card.due, card.stability), (0, self.NOW, None))
+
+    def test_same_input_gives_the_same_output(self):
+        card = self.scheduler.new_card(self.NOW)
+        self.assertEqual(
+            self.scheduler.review(card, 3, self.NOW),
+            self.scheduler.review(card, 3, self.NOW),
+        )
+
+    def test_better_ratings_push_the_due_date_further(self):
+        card = self.scheduler.new_card(self.NOW)
+        dues = [self.scheduler.review(card, rating, self.NOW).due for rating in (1, 2, 3, 4)]
+        self.assertEqual(dues, sorted(dues))
+        self.assertTrue(all(due > self.NOW for due in dues))
+
+    def test_good_twice_graduates_to_review_with_growing_intervals(self):
+        card = self.scheduler.new_card(self.NOW)
+        first = self.scheduler.review(card, 3, self.NOW)
+        self.assertEqual(first.state, 1)  # still learning
+
+        second = self.scheduler.review(first, 3, first.due)
+        self.assertEqual(second.state, 2)  # review
+
+        third = self.scheduler.review(second, 3, second.due)
+        self.assertGreater(third.due - second.due, second.due - first.due)
+        self.assertGreater(third.stability, second.stability)
+
+    def test_again_on_a_review_card_moves_it_to_relearning(self):
+        card = self.scheduler.new_card(self.NOW)
+        for _ in range(2):
+            card = self.scheduler.review(card, 3, card.due)
+        self.assertEqual(card.state, 2)
+
+        lapsed = self.scheduler.review(card, 1, card.due)
+        self.assertEqual(lapsed.state, 3)
+        self.assertLess(lapsed.stability, card.stability)
+
+
+class FlashcardServiceTests(TestCase):
+    NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    def setUp(self):
+        from apps.studyspace.models import Quiz, Studyspace
+        from apps.studyspace.services.flashcard_service import FlashcardService
+        from apps.users.models import User
+
+        self.service = FlashcardService()
+        self.user = User.objects.create_user(email="a@example.com", username="a", password="x")
+        self.space = Studyspace.objects.create(title="Space", description="", user=self.user)
+        self.quiz = Quiz.objects.create(
+            studyspace=self.space, title="Quiz", status=Quiz.Status.PUBLISHED
+        )
+
+    def _card(self, **overrides):
+        from apps.studyspace.models import Flashcard
+
+        return Flashcard.objects.create(
+            studyspace=self.space, front="Q", back="A", due=self.NOW, **overrides
+        )
+
+    def test_review_updates_the_card_and_writes_a_log(self):
+        from apps.studyspace.models import Flashcard
+
+        card = self._card()
+        self.service.review(card, 3, self.NOW)
+
+        card.refresh_from_db()
+        self.assertEqual((card.reps, card.lapses, card.state), (1, 0, Flashcard.State.LEARNING))
+        self.assertEqual(card.last_review, self.NOW)
+        self.assertGreater(card.due, self.NOW)
+
+        log = card.review_logs.get()
+        self.assertEqual((log.rating, log.state_before), (3, Flashcard.State.NEW))
+        self.assertEqual((log.reviewed_at, log.due_before, log.due_after), (self.NOW, self.NOW, card.due))
+
+    def test_an_invalid_rating_changes_nothing(self):
+        card = self._card()
+        for bad in (0, 5, -1):
+            with self.assertRaises(ValueError):
+                self.service.review(card, bad, self.NOW)
+        card.refresh_from_db()
+        self.assertEqual((card.reps, card.review_logs.count()), (0, 0))
+
+    def test_a_failed_review_rolls_the_log_back(self):
+        from unittest import mock
+
+        card = self._card()
+        with mock.patch.object(type(card), 'save', side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                self.service.review(card, 3, self.NOW)
+        self.assertEqual(card.review_logs.count(), 0)
+
+    def test_forgetting_a_learned_card_counts_a_lapse(self):
+        card = self._card()
+        for _ in range(2):
+            self.service.review(card, 3, card.due)
+        self.assertEqual(card.lapses, 0)
+
+        self.service.review(card, 1, card.due)
+        self.assertEqual(card.lapses, 1)
+
+    def test_again_on_a_new_card_is_not_a_lapse(self):
+        card = self._card()
+        self.service.review(card, 1, self.NOW)
+        self.assertEqual(card.lapses, 0)
+
+    def test_reviewing_a_card_that_is_not_due_is_allowed_and_logged(self):
+        card = self._card()
+        self.service.review(card, 3, self.NOW)
+        early = self.NOW + timedelta(seconds=1)
+        self.service.review(card, 3, early)
+        self.assertEqual(card.review_logs.count(), 2)
+
+    def test_reset_progress_is_a_fresh_card_that_keeps_the_history(self):
+        from apps.studyspace.models import Flashcard
+
+        card = self._card()
+        for _ in range(3):
+            self.service.review(card, 3, card.due)
+
+        self.service.reset_progress(card, self.NOW)
+        card.refresh_from_db()
+        self.assertEqual(card.state, Flashcard.State.NEW)
+        self.assertEqual((card.reps, card.lapses, card.stability, card.last_review), (0, 0, None, None))
+        self.assertEqual(card.due, self.NOW)
+        self.assertEqual(card.review_logs.count(), 3)
+
+    def test_due_queue_is_ordered_and_limits_new_cards(self):
+        from apps.studyspace.models import Flashcard
+
+        old = self._card(state=Flashcard.State.REVIEW, stability=2.0, difficulty=5.0)
+        Flashcard.objects.filter(pk=old.pk).update(due=self.NOW - timedelta(days=1))
+        new_cards = [self._card() for _ in range(3)]
+        later = self._card(state=Flashcard.State.REVIEW, stability=2.0, difficulty=5.0)
+        Flashcard.objects.filter(pk=later.pk).update(due=self.NOW + timedelta(days=1))
+
+        queue = list(self.service.due_queue(self.user, self.NOW))
+        self.assertEqual(queue[0].pk, old.pk)
+        self.assertEqual(len(queue), 4)  # `later` is not due
+
+        limited = list(self.service.due_queue(self.user, self.NOW, new_limit=1))
+        self.assertEqual([c.pk for c in limited if c.state == Flashcard.State.NEW], [new_cards[0].pk])
+        self.assertIn(old.pk, [c.pk for c in limited])
+
+    def test_stats_count_new_due_and_total_per_space(self):
+        from apps.studyspace.models import Flashcard
+
+        self._card()
+        reviewed = self._card(state=Flashcard.State.REVIEW, stability=2.0, difficulty=5.0)
+        Flashcard.objects.filter(pk=reviewed.pk).update(due=self.NOW - timedelta(hours=1))
+        future = self._card(state=Flashcard.State.REVIEW, stability=2.0, difficulty=5.0)
+        Flashcard.objects.filter(pk=future.pk).update(due=self.NOW + timedelta(days=3))
+
+        self.assertEqual(
+            self.service.stats(self.user, self.NOW),
+            [{'studyspace': self.space.pk, 'total': 3, 'new': 1, 'due': 1}],
+        )
