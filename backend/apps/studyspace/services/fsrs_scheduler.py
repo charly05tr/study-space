@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from fsrs import Card, Rating, Scheduler, State
+from fsrs import Card, Rating as FsrsRating, Scheduler, State
 
-from apps.studyspace.services.scheduler import CardSchedule, IScheduler
+from apps.studyspace.services.scheduler import CardSchedule, CardState, IScheduler, Rating
 
 
 class FsrsScheduler(IScheduler):
@@ -21,15 +21,20 @@ class FsrsScheduler(IScheduler):
 
     def new_card(self, now: datetime) -> CardSchedule:
         return CardSchedule(
-            state=0, step=None, stability=None, difficulty=None, due=now, last_review=None
+            state=CardState.NEW,
+            step=None,
+            stability=None,
+            difficulty=None,
+            due=now,
+            last_review=None,
         )
 
     def review(self, card: CardSchedule, rating: int, now: datetime) -> CardSchedule:
         updated, _ = self._scheduler.review_card(
-            self._to_fsrs(card), Rating(rating), review_datetime=now
+            self._to_fsrs(card), FsrsRating(Rating(rating)), review_datetime=now
         )
         return CardSchedule(
-            state=int(updated.state.value),
+            state=CardState(updated.state.value),
             step=updated.step,
             stability=updated.stability,
             difficulty=updated.difficulty,
@@ -41,7 +46,7 @@ class FsrsScheduler(IScheduler):
     def _to_fsrs(card: CardSchedule) -> Card:
         # FSRS has no "new" state: an unreviewed card is a learning card at
         # step 0 with no stability yet.
-        state = State.Learning if card.state == 0 else State(card.state)
+        state = State.Learning if card.state == CardState.NEW else State(card.state)
         return Card(
             card_id=0,  # not used by the algorithm; avoids the clock-based default
             state=state,

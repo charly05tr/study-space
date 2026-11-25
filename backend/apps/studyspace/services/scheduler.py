@@ -1,14 +1,33 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from enum import IntEnum
+
+
+class CardState(IntEnum):
+    """Where a card is in its life. Same integers as Flashcard.State, which is
+    what gets stored; a test keeps the two aligned."""
+
+    NEW = 0
+    LEARNING = 1
+    REVIEW = 2
+    RELEARNING = 3
+
+
+class Rating(IntEnum):
+    """How well the card was remembered. Same integers as ReviewLog.Rating."""
+
+    AGAIN = 1
+    HARD = 2
+    GOOD = 3
+    EASY = 4
 
 
 @dataclass(frozen=True)
 class CardSchedule:
     """The scheduling state of a card, independent of any algorithm library.
 
-    `state` uses the same integers as Flashcard.State (0 new, 1 learning,
-    2 review, 3 relearning).
+    `state` holds a CardState value.
     """
 
     state: int
