@@ -1,4 +1,5 @@
 from django.db.models import F, Q
+from django.utils import timezone
 from django_filters import rest_framework as filters
 
 from apps.studyspace.models import (
@@ -140,14 +141,17 @@ class BlockLinkFilter(filters.FilterSet):
         El vecindario de un nodo son las dos direcciones: quien lo cita importa
         tanto como a quien cita el.
         """
-        from django.db.models import Q
-
         return queryset.filter(Q(source=value) | Q(target=value))
 
 
 class QuizFilter(filters.FilterSet):
     """Quizzes are read per studyspace; `status` separates drafts from the
-    ones available to study."""
+    ones available to study.
+
+    `studyspace` filters on the raw id, not a model choice: a foreign id and a
+    missing one must answer the same (an empty list)."""
+
+    studyspace = filters.NumberFilter(field_name='studyspace_id')
 
     class Meta:
         model = Quiz
@@ -181,7 +185,5 @@ class FlashcardFilter(filters.FilterSet):
     def filter_due(self, queryset, name, value):
         if value is None:
             return queryset
-        from django.utils import timezone
-
         now = timezone.now()
         return queryset.filter(due__lte=now) if value else queryset.filter(due__gt=now)

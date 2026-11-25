@@ -664,6 +664,8 @@ QUIZ_MAX_QUESTIONS = 100
 QUESTION_MAX_OPTIONS = 8
 QUESTION_MAX_OPTION_LENGTH = 500
 QUESTION_MAX_TEXT = 5000
+QUESTION_MAX_POSITION = 10_000
+QUIZ_MAX_PROMPT = 2000
 FLASHCARD_MAX_TEXT = 10000
 FROM_QUESTIONS_MAX_IDS = 200
 
@@ -715,6 +717,11 @@ class QuestionBaseSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {'options': "A multiple choice question needs at least 2 options."}
                 )
+            normalized = [option.strip().casefold() for option in options]
+            if len(set(normalized)) != len(normalized):
+                raise serializers.ValidationError(
+                    {'options': "Options must be different from each other."}
+                )
             if isinstance(answer, bool) or not isinstance(answer, int) or not 0 <= answer < len(options):
                 raise serializers.ValidationError(
                     {'correct_answer': "Must be the index of one of the options."}
@@ -750,7 +757,9 @@ class QuestionSerializer(QuestionBaseSerializer):
     """A question on its own (/questions/). `quiz` is fixed once created."""
 
     quiz = serializers.PrimaryKeyRelatedField(queryset=Quiz.objects.all())
-    position = serializers.IntegerField(required=False, min_value=0)
+    position = serializers.IntegerField(
+        required=False, min_value=0, max_value=QUESTION_MAX_POSITION
+    )
 
     class Meta:
         model = Question
@@ -791,6 +800,7 @@ class QuizCreateSerializer(serializers.ModelSerializer):
     """
 
     studyspace = serializers.PrimaryKeyRelatedField(queryset=Studyspace.objects.all())
+    prompt = serializers.CharField(max_length=QUIZ_MAX_PROMPT, required=False, allow_blank=True)
     questions = QuestionNestedSerializer(many=True, required=False, max_length=QUIZ_MAX_QUESTIONS)
 
     class Meta:
@@ -801,7 +811,6 @@ class QuizCreateSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             'description': {'required': False},
-            'prompt': {'required': False},
             'language': {'required': False},
             'model': {'required': False},
         }
@@ -848,6 +857,17 @@ class FlashcardReviewSerializer(serializers.Serializer):
     """1 again, 2 hard, 3 good, 4 easy."""
 
     rating = serializers.IntegerField(min_value=1, max_value=4)
+    # The `last_review` of the card as the client saw it (null for a card never
+    # reviewed). Optional: when sent and the card has moved on, the review is
+    # rejected with 409 instead of being applied twice.
+    last_review = serializers.DateTimeField(required=False, allow_null=True)
+
+
+class FlashcardStaleReviewSerializer(serializers.Serializer):
+    """409 body of review: the card as it is now."""
+
+    detail = serializers.CharField()
+    card = FlashcardSerializer()
 
 
 class FlashcardFromQuestionsSerializer(serializers.Serializer):

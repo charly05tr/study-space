@@ -1,14 +1,34 @@
 from datetime import datetime
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 
 from apps.studyspace.models import Flashcard, Question, Quiz, ReviewLog
 from apps.studyspace.services.fsrs_scheduler import FsrsScheduler
-from apps.studyspace.services.scheduler import CardSchedule, IScheduler
+from apps.studyspace.services.scheduler import CardSchedule, CardState, IScheduler, Rating
 from apps.users.models import User
 
-_VALID_RATINGS = {choice.value for choice in ReviewLog.Rating}
+_VALID_RATINGS = {rating.value for rating in Rating}
+
+# Cards of a quiz in this status never enter study, review or the stats.
+_HIDDEN_QUIZ_STATUS = Quiz.Status.DRAFT
+
+# Fields a review writes. Saving only these keeps a concurrent front/back edit.
+_SCHEDULING_FIELDS = [
+    'state', 'step', 'stability', 'difficulty', 'due', 'last_review',
+    'reps', 'lapses', 'updated_at',
+]
+
+# Distinguishes "the client sent no last_review" from "it sent null".
+UNSET = object()
+
+
+class StaleReview(Exception):
+    """The card was reviewed since the client last saw it."""
+
+    def __init__(self, card: Flashcard):
+        super().__init__("The card was already reviewed.")
+        self.card = card
 
 # Rendered into the back of a converted card.
 _TRUE_FALSE_LABELS = {True: 'True', False: 'False'}
@@ -36,13 +56,7 @@ class FlashcardService:
         space with hundreds of fresh cards does not bury the reviews.
         Cards of draft quizzes never show up.
         """
-        due = (
-            self.get_user_flashcards(user)
-            .filter(due__lte=now)
-            .exclude(question__quiz__status=Quiz.Status.DRAFT)
-        )
-        if studyspace is not None:
-            due = due.filter(studyspace=studyspace)
+        due = self._studyable_cards(user, studyspace).filter(due__lte=now)
 
         if new_limit is None:
             return due.order_by('due', 'id')
@@ -61,14 +75,9 @@ class FlashcardService:
         """Per studyspace: `total` cards, `new` never reviewed, `due` reviewed
         cards whose due date has passed. New cards are not counted as due, so
         the two numbers add up to the work available today."""
-        cards = self.get_user_flashcards(user).exclude(
-            question__quiz__status=Quiz.Status.DRAFT
-        )
-        if studyspace is not None:
-            cards = cards.filter(studyspace=studyspace)
-
         rows = (
-            cards.values('studyspace_id')
+            self._studyable_cards(user, studyspace)
+            .values('studyspace_id')
             .annotate(
                 total=Count('id'),
                 new=Count('id', filter=Q(state=Flashcard.State.NEW)),
@@ -89,13 +98,27 @@ class FlashcardService:
     # --- writes ------------------------------------------------------------
 
     @transaction.atomic
-    def review(self, flashcard: Flashcard, rating: int, now: datetime) -> Flashcard:
+    def review(
+        self,
+        flashcard: Flashcard,
+        rating: int,
+        now: datetime,
+        expected_last_review=UNSET,
+    ) -> Flashcard:
         """Rate a card: update its schedule and write the log, or neither.
 
+        The card is re-read under a row lock, so two reviews of the same card
+        run one after the other. If `expected_last_review` is given (None for a
+        card never reviewed) and differs from the stored one, the card was
+        already reviewed and StaleReview is raised without writing anything.
         Reviewing a card that is not due yet is allowed; it is logged as is.
         """
         if rating not in _VALID_RATINGS:
             raise ValueError(f"Invalid rating: {rating}")
+
+        flashcard = Flashcard.objects.select_for_update().get(pk=flashcard.pk)
+        if expected_last_review is not UNSET and expected_last_review != flashcard.last_review:
+            raise StaleReview(flashcard)
 
         after = self.scheduler.review(self._schedule_of(flashcard), rating, now)
 
@@ -109,14 +132,14 @@ class FlashcardService:
         )
 
         # A lapse is forgetting a card that was already learned.
-        if rating == ReviewLog.Rating.AGAIN and flashcard.state in (
-            Flashcard.State.REVIEW,
-            Flashcard.State.RELEARNING,
+        if rating == Rating.AGAIN and flashcard.state in (
+            CardState.REVIEW,
+            CardState.RELEARNING,
         ):
             flashcard.lapses += 1
         flashcard.reps += 1
         self._apply_schedule(flashcard, after)
-        flashcard.save()
+        flashcard.save(update_fields=_SCHEDULING_FIELDS)
         return flashcard
 
     @transaction.atomic
@@ -143,21 +166,23 @@ class FlashcardService:
                 pk__in=ordered, quiz__studyspace__user=user
             ).select_related('quiz__studyspace')
         }
-        already = set(
-            Flashcard.objects.filter(question_id__in=questions).values_list('question_id', flat=True)
-        )
+        already = self._converted_question_ids(questions)
 
         created, skipped, not_published = [], [], []
         for question_id in ordered:
             question = questions.get(question_id)
             if question is None:
                 continue
-            if question.quiz.status != Quiz.Status.PUBLISHED:
+            if question.quiz.status == _HIDDEN_QUIZ_STATUS:
                 not_published.append(question_id)
             elif question_id in already:
                 skipped.append(question_id)
             else:
-                created.append(self._card_from(question, now))
+                card = self._create_card_once(question, now)
+                if card is None:
+                    skipped.append(question_id)
+                else:
+                    created.append(card)
 
         return {
             'created': created,
@@ -167,6 +192,31 @@ class FlashcardService:
         }
 
     # --- helpers -----------------------------------------------------------
+
+    @staticmethod
+    def _converted_question_ids(question_ids) -> set[int]:
+        return set(
+            Flashcard.objects.filter(question_id__in=question_ids).values_list('question_id', flat=True)
+        )
+
+    def _studyable_cards(self, user: User, studyspace=None):
+        """The user's cards that can be studied: those of draft quizzes are out."""
+        cards = self.get_user_flashcards(user).exclude(question__quiz__status=_HIDDEN_QUIZ_STATUS)
+        if studyspace is not None:
+            cards = cards.filter(studyspace=studyspace)
+        return cards
+
+    def _create_card_once(self, question: Question, now: datetime) -> Flashcard | None:
+        """The new card, or None if a concurrent request converted the question
+        first. The savepoint keeps the failed insert from poisoning the
+        surrounding transaction."""
+        try:
+            with transaction.atomic():
+                return self._card_from(question, now)
+        except IntegrityError:
+            if Flashcard.objects.filter(question=question).exists():
+                return None
+            raise
 
     def _card_from(self, question: Question, now: datetime) -> Flashcard:
         card = Flashcard(
@@ -206,13 +256,13 @@ def render_answer(question: Question) -> str:
     answer = question.correct_answer
 
     if kind == Question.QuestionType.MULTIPLE_CHOICE:
-        options = question.options or []
+        options = question.options if isinstance(question.options, list) else []
         valid = isinstance(answer, int) and not isinstance(answer, bool) and 0 <= answer < len(options)
         text = str(options[answer]) if valid else ''
     elif kind == Question.QuestionType.TRUE_FALSE:
-        text = _TRUE_FALSE_LABELS.get(answer, '')
+        text = _TRUE_FALSE_LABELS[answer] if isinstance(answer, bool) else ''
     else:
-        text = str(answer or '')
+        text = answer.strip() if isinstance(answer, str) else ''
 
     if question.explanation:
         return f"{text}\n\n{question.explanation}" if text else question.explanation

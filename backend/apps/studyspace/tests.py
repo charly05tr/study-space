@@ -1995,20 +1995,20 @@ class FlashcardServiceTests(TestCase):
     def test_forgetting_a_learned_card_counts_a_lapse(self):
         card = self._card()
         for _ in range(2):
-            self.service.review(card, 3, card.due)
+            card = self.service.review(card, 3, card.due)
         self.assertEqual(card.lapses, 0)
 
-        self.service.review(card, 1, card.due)
+        card = self.service.review(card, 1, card.due)
         self.assertEqual(card.lapses, 1)
 
     def test_again_on_a_new_card_is_not_a_lapse(self):
         card = self._card()
-        self.service.review(card, 1, self.NOW)
+        card = self.service.review(card, 1, self.NOW)
         self.assertEqual(card.lapses, 0)
 
     def test_reviewing_a_card_that_is_not_due_is_allowed_and_logged(self):
         card = self._card()
-        self.service.review(card, 3, self.NOW)
+        card = self.service.review(card, 3, self.NOW)
         early = self.NOW + timedelta(seconds=1)
         self.service.review(card, 3, early)
         self.assertEqual(card.review_logs.count(), 2)
@@ -2018,7 +2018,7 @@ class FlashcardServiceTests(TestCase):
 
         card = self._card()
         for _ in range(3):
-            self.service.review(card, 3, card.due)
+            card = self.service.review(card, 3, card.due)
 
         self.service.reset_progress(card, self.NOW)
         card.refresh_from_db()
@@ -2026,6 +2026,96 @@ class FlashcardServiceTests(TestCase):
         self.assertEqual((card.reps, card.lapses, card.stability, card.last_review), (0, 0, None, None))
         self.assertEqual(card.due, self.NOW)
         self.assertEqual(card.review_logs.count(), 3)
+
+    def test_review_works_on_the_stored_card_not_a_stale_copy(self):
+        card = self._card()
+        stale = self._card_copy(card)
+        self.service.review(card, 3, self.NOW)
+
+        # `stale` still says "never reviewed", but the stored card has moved on.
+        reviewed = self.service.review(stale, 3, self.NOW + timedelta(minutes=10))
+        self.assertEqual(reviewed.reps, 2)
+        self.assertEqual(card.review_logs.count(), 2)
+
+    def test_review_does_not_overwrite_a_concurrent_content_edit(self):
+        from apps.studyspace.models import Flashcard
+
+        card = self._card()
+        stale = self._card_copy(card)
+        Flashcard.objects.filter(pk=card.pk).update(front="Edited front", back="Edited back")
+
+        self.service.review(stale, 3, self.NOW)
+        card.refresh_from_db()
+        self.assertEqual((card.front, card.back, card.reps), ("Edited front", "Edited back", 1))
+
+    def test_a_stale_expected_last_review_is_rejected_and_writes_nothing(self):
+        from apps.studyspace.services.flashcard_service import StaleReview
+
+        card = self._card()
+        self.service.review(card, 3, self.NOW)
+        card.refresh_from_db()
+
+        with self.assertRaises(StaleReview) as raised:
+            self.service.review(card, 3, self.NOW + timedelta(hours=1), expected_last_review=None)
+        self.assertEqual(raised.exception.card.pk, card.pk)
+        card.refresh_from_db()
+        self.assertEqual((card.reps, card.last_review, card.review_logs.count()), (1, self.NOW, 1))
+
+    def test_a_matching_expected_last_review_is_applied(self):
+        card = self._card()
+        self.service.review(card, 3, self.NOW, expected_last_review=None)
+        reviewed = self.service.review(
+            card, 3, self.NOW + timedelta(hours=1), expected_last_review=self.NOW
+        )
+        self.assertEqual(reviewed.reps, 2)
+
+    def _card_copy(self, card):
+        from apps.studyspace.models import Flashcard
+
+        return Flashcard.objects.get(pk=card.pk)
+
+    def _published_question(self, **overrides):
+        from apps.studyspace.models import Question
+
+        fields = {
+            'quiz': self.quiz, 'question_type': Question.QuestionType.SHORT_ANSWER,
+            'prompt': "Define X", 'correct_answer': "X is Y",
+        }
+        fields.update(overrides)
+        return Question.objects.create(**fields)
+
+    def test_a_question_converted_by_a_concurrent_request_is_skipped(self):
+        from unittest import mock
+        from apps.studyspace.models import Flashcard
+        from apps.studyspace.services.flashcard_service import FlashcardService
+
+        question = self._published_question()
+        Flashcard.objects.create(studyspace=self.space, question=question, front="Q", back="A")
+
+        # The "already converted?" check ran before the other request committed,
+        # so the insert is what hits the unique constraint.
+        with mock.patch.object(FlashcardService, '_converted_question_ids', return_value=set()):
+            result = self.service.convert_questions(self.user, [question.pk], self.NOW)
+
+        self.assertEqual((result['created'], result['skipped']), ([], [question.pk]))
+        self.assertEqual(Flashcard.objects.filter(question=question).count(), 1)
+
+    def test_an_unrelated_integrity_error_is_not_swallowed(self):
+        from unittest import mock
+        from django.db import IntegrityError
+        from apps.studyspace.services.flashcard_service import FlashcardService
+
+        question = self._published_question()
+        with mock.patch.object(FlashcardService, '_card_from', side_effect=IntegrityError("other")):
+            with self.assertRaises(IntegrityError):
+                self.service.convert_questions(self.user, [question.pk], self.NOW)
+
+    def test_converting_a_question_that_already_has_a_card_skips_it(self):
+        question = self._published_question()
+        first = self.service.convert_questions(self.user, [question.pk], self.NOW)
+        second = self.service.convert_questions(self.user, [question.pk], self.NOW)
+        self.assertEqual(len(first['created']), 1)
+        self.assertEqual((second['created'], second['skipped']), ([], [question.pk]))
 
     def test_due_queue_is_ordered_and_limits_new_cards(self):
         from apps.studyspace.models import Flashcard
@@ -2057,6 +2147,96 @@ class FlashcardServiceTests(TestCase):
             self.service.stats(self.user, self.NOW),
             [{'studyspace': self.space.pk, 'total': 3, 'new': 1, 'due': 1}],
         )
+
+
+class RenderAnswerTests(SimpleTestCase):
+    def _back(self, question_type, correct_answer, options=None, explanation=''):
+        from apps.studyspace.models import Question
+        from apps.studyspace.services.flashcard_service import render_answer
+
+        question = Question(
+            question_type=question_type, prompt="P", correct_answer=correct_answer,
+            options=options if options is not None else [], explanation=explanation,
+        )
+        return render_answer(question)
+
+    def test_multiple_choice_renders_the_chosen_option(self):
+        self.assertEqual(self._back('multiple_choice', 1, ['a', 'b']), 'b')
+
+    def test_multiple_choice_with_an_index_out_of_range_has_no_answer_text(self):
+        for bad in (2, -1, 99):
+            self.assertEqual(self._back('multiple_choice', bad, ['a', 'b']), '', bad)
+
+    def test_multiple_choice_with_a_non_integer_index_has_no_answer_text(self):
+        for bad in (True, '1', 1.0, None, [1], {'a': 1}):
+            self.assertEqual(self._back('multiple_choice', bad, ['a', 'b']), '', repr(bad))
+
+    def test_multiple_choice_with_broken_options_does_not_crash(self):
+        self.assertEqual(self._back('multiple_choice', 0, None), '')
+        self.assertEqual(self._back('multiple_choice', 0, {'a': 1}), '')
+
+    def test_true_false_renders_a_label_only_for_booleans(self):
+        self.assertEqual(self._back('true_false', True), 'True')
+        self.assertEqual(self._back('true_false', False), 'False')
+        for bad in ('true', 1, 0, None, [True], {'a': 1}):
+            self.assertEqual(self._back('true_false', bad), '', repr(bad))
+
+    def test_short_answer_renders_text_and_ignores_non_strings(self):
+        self.assertEqual(self._back('short_answer', '  Because.  '), 'Because.')
+        for bad in (None, 5, ['x'], {'a': 1}, True):
+            self.assertEqual(self._back('short_answer', bad), '', repr(bad))
+
+    def test_the_explanation_follows_the_answer(self):
+        self.assertEqual(self._back('true_false', True, explanation='Why.'), 'True\n\nWhy.')
+
+    def test_without_an_answer_the_explanation_is_the_whole_back(self):
+        self.assertEqual(self._back('true_false', 'nope', explanation='Why.'), 'Why.')
+        self.assertEqual(self._back('multiple_choice', 7, ['a', 'b'], 'Why.'), 'Why.')
+
+
+class SchedulerContractTests(SimpleTestCase):
+    NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    def test_enums_match_the_stored_choices(self):
+        from apps.studyspace.models import Flashcard, ReviewLog
+        from apps.studyspace.services.scheduler import CardState, Rating
+
+        self.assertEqual({s.name: s.value for s in CardState}, {c.name: c.value for c in Flashcard.State})
+        self.assertEqual({r.name: r.value for r in Rating}, {c.name: c.value for c in ReviewLog.Rating})
+
+    def test_a_new_card_is_handed_to_fsrs_as_a_learning_card_at_step_zero(self):
+        from fsrs import State
+        from apps.studyspace.services.fsrs_scheduler import FsrsScheduler
+
+        fsrs_card = FsrsScheduler._to_fsrs(FsrsScheduler().new_card(self.NOW))
+        self.assertEqual(fsrs_card.state, State.Learning)
+        self.assertEqual(fsrs_card.step, 0)
+        self.assertEqual((fsrs_card.stability, fsrs_card.difficulty), (None, None))
+        self.assertEqual((fsrs_card.due, fsrs_card.last_review), (self.NOW, None))
+
+    def test_reviewing_a_new_card_enters_the_learning_steps(self):
+        from apps.studyspace.services.fsrs_scheduler import FsrsScheduler
+        from apps.studyspace.services.scheduler import CardState
+
+        scheduler = FsrsScheduler()
+        after = scheduler.review(scheduler.new_card(self.NOW), 3, self.NOW)
+        self.assertEqual(after.state, CardState.LEARNING)
+        self.assertEqual(after.step, 1)
+        self.assertIsNotNone(after.stability)
+        self.assertEqual(after.last_review, self.NOW)
+
+    def test_the_schedule_is_deterministic_across_instances(self):
+        from apps.studyspace.services.fsrs_scheduler import FsrsScheduler
+
+        results = []
+        for _ in range(3):
+            scheduler = FsrsScheduler()
+            card = scheduler.new_card(self.NOW)
+            for rating in (3, 3, 1, 4):
+                card = scheduler.review(card, rating, card.due)
+            results.append(card)
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[1], results[2])
 
 
 class QuizApiTestCase(APITestCase):
@@ -2215,6 +2395,61 @@ class QuizApiTests(QuizApiTestCase):
         self.assertEqual(Question.objects.count(), 0)
         self.assertEqual(Flashcard.objects.count(), 3)
         self.assertTrue(all(card.question_id is None for card in Flashcard.objects.all()))
+
+
+class QuizHardeningTests(QuizApiTestCase):
+    def test_the_studyspace_filter_answers_the_same_for_foreign_and_missing_ids(self):
+        self._quiz()
+        foreign = self.client.get('/api/quizzes/', {'studyspace': self.foreign_space.pk})
+        missing = self.client.get('/api/quizzes/', {'studyspace': 999999})
+        self.assertEqual((foreign.status_code, foreign.json()), (200, []))
+        self.assertEqual((missing.status_code, missing.json()), (200, []))
+        self.assertEqual(len(self.client.get('/api/quizzes/', {'studyspace': self.space.pk}).json()), 1)
+
+    def test_the_prompt_is_capped(self):
+        self.assertEqual(self._quiz(prompt='x' * 2000).status_code, 201)
+        self.assertEqual(self._quiz(prompt='x' * 2001).status_code, 400)
+
+    def test_title_and_description_are_capped(self):
+        self.assertEqual(self._quiz(title='t' * 201).status_code, 400)
+        self.assertEqual(self._quiz(description='d' * 1001).status_code, 400)
+
+    def test_the_prompt_can_be_left_out_or_blank(self):
+        payload = {'studyspace': self.space.pk, 'title': 'No prompt', 'questions': [self.TF]}
+        self.assertEqual(self.client.post('/api/quizzes/', payload, format='json').status_code, 201)
+        self.assertEqual(self._quiz(prompt='').status_code, 201)
+
+    def test_a_question_position_is_bounded(self):
+        quiz = self._quiz([self.TF]).json()
+        payload = {**self.TF, 'quiz': quiz['id']}
+        self.assertEqual(
+            self.client.post('/api/questions/', {**payload, 'position': 10_000}, format='json').status_code, 201
+        )
+        self.assertEqual(
+            self.client.post('/api/questions/', {**payload, 'position': 10_001}, format='json').status_code, 400
+        )
+
+    def test_a_multiple_choice_answer_must_index_an_option(self):
+        for bad in (3, 10**12, -1, True, 1.5):
+            response = self._quiz([{**self.MC, 'correct_answer': bad}])
+            self.assertEqual(response.status_code, 400, bad)
+
+    def test_duplicate_multiple_choice_options_are_rejected(self):
+        for options in (['Same', 'Same'], ['Same', ' same ', 'Other'], ['A', 'a']):
+            response = self._quiz([{**self.MC, 'options': options, 'correct_answer': 0}])
+            self.assertEqual(response.status_code, 400, options)
+            self.assertIn('options', str(response.json()))
+
+    def test_duplicates_are_rejected_when_editing_options_too(self):
+        quiz = self._quiz([self.MC]).json()
+        question_id = quiz['questions'][0]['id']
+        response = self.client.patch(
+            f"/api/questions/{question_id}/", {'options': ['A', 'a'], 'correct_answer': 0}, format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_distinct_options_are_accepted(self):
+        self.assertEqual(self._quiz([self.MC]).status_code, 201)
 
 
 class QuestionApiTests(QuizApiTestCase):
@@ -2443,6 +2678,54 @@ class FlashcardApiTests(QuizApiTestCase):
         again = self.client.post(f"{self.URL}{card['id']}/review/", {'rating': 4}, format='json')
         self.assertEqual(again.status_code, 200)
         self.assertEqual(again.json()['reps'], 2)
+
+    def _review(self, card_id, rating=3, **extra):
+        return self.client.post(
+            f"{self.URL}{card_id}/review/", {'rating': rating, **extra}, format='json'
+        )
+
+    def test_a_review_with_the_seen_last_review_is_applied(self):
+        card = self._card()
+        first = self._review(card['id'], last_review=card['last_review'])
+        self.assertEqual(first.status_code, 200)
+        second = self._review(card['id'], last_review=first.json()['last_review'])
+        self.assertEqual((second.status_code, second.json()['reps']), (200, 2))
+
+    def test_a_review_without_last_review_keeps_working(self):
+        card = self._card()
+        self.assertEqual(self._review(card['id']).status_code, 200)
+        self.assertEqual(self._review(card['id']).status_code, 200)
+
+    def test_a_stale_last_review_is_a_409_with_the_current_card_and_writes_nothing(self):
+        from apps.studyspace.models import Flashcard, ReviewLog
+
+        card = self._card()
+        reviewed = self._review(card['id'], last_review=None).json()
+
+        response = self._review(card['id'], rating=1, last_review=None)
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertIn('detail', body)
+        self.assertEqual(body['card']['id'], card['id'])
+        self.assertEqual(body['card']['last_review'], reviewed['last_review'])
+        self.assertEqual(body['card']['reps'], 1)
+
+        stored = Flashcard.objects.get(pk=card['id'])
+        self.assertEqual((stored.reps, stored.lapses), (1, 0))
+        self.assertEqual(ReviewLog.objects.count(), 1)
+
+    def test_retrying_the_same_request_after_success_is_a_409(self):
+        from apps.studyspace.models import ReviewLog
+
+        card = self._card()
+        self.assertEqual(self._review(card['id'], last_review=card['last_review']).status_code, 200)
+        retry = self._review(card['id'], last_review=card['last_review'])
+        self.assertEqual(retry.status_code, 409)
+        self.assertEqual(ReviewLog.objects.count(), 1)
+
+    def test_last_review_must_be_a_datetime(self):
+        card = self._card()
+        self.assertEqual(self._review(card['id'], last_review='yesterday').status_code, 400)
 
     def test_editing_a_card_keeps_its_progress(self):
         card = self._card()

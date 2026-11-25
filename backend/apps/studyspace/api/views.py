@@ -28,7 +28,7 @@ from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.reference_service import ReferenceService
 from apps.studyspace.services.source_service import SourceService
 from apps.studyspace.services.annotation_service import AnnotationService
-from apps.studyspace.services.flashcard_service import FlashcardService
+from apps.studyspace.services.flashcard_service import UNSET, FlashcardService, StaleReview
 from apps.studyspace.services.note_review_service import NoteReviewService
 from apps.studyspace.services.quiz_service import QuizService
 from apps.studyspace.services.study_session_service import StudySessionService
@@ -884,7 +884,7 @@ class FlashcardViewSet(viewsets.ModelViewSet):
             raise ValidationError({name: "Must be a whole number."})
         if value < 0:
             raise ValidationError({name: "Must not be negative."})
-        return min(value, maximum) if maximum else value
+        return min(value, maximum) if maximum is not None else value
 
     @extend_schema(responses={200: FlashcardSerializer(many=True)})
     @action(detail=False, methods=['get'], url_path='due')
@@ -938,16 +938,39 @@ class FlashcardViewSet(viewsets.ModelViewSet):
         code = status.HTTP_201_CREATED if result['created'] else status.HTTP_200_OK
         return Response(FlashcardConversionResultSerializer(result).data, status=code)
 
-    @extend_schema(request=FlashcardReviewSerializer, responses={200: FlashcardSerializer})
+    @extend_schema(
+        request=FlashcardReviewSerializer,
+        responses={200: FlashcardSerializer, 409: FlashcardStaleReviewSerializer},
+    )
     @action(detail=True, methods=['post'], url_path='review')
     def review(self, request, pk=None):
         """Rate a card (1 again, 2 hard, 3 good, 4 easy). A card that is not
-        due yet can be reviewed; it is logged like any other."""
+        due yet can be reviewed; it is logged like any other.
+
+        Send `last_review` (the value the client saw, null for a new card) to
+        make the request safe to retry: if the card was reviewed since, nothing
+        is written and the response is 409 with the current `card`.
+        """
         card = self.get_object()
         serializer = FlashcardReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
 
-        card = self.service.review(card, serializer.validated_data['rating'], timezone.now())
+        try:
+            card = self.service.review(
+                card,
+                data['rating'],
+                timezone.now(),
+                expected_last_review=data.get('last_review', UNSET),
+            )
+        except StaleReview as stale:
+            return Response(
+                {
+                    'detail': "The card was already reviewed.",
+                    'card': FlashcardSerializer(stale.card).data,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(FlashcardSerializer(card).data)
 
     @extend_schema(request=None, responses={200: FlashcardSerializer})
