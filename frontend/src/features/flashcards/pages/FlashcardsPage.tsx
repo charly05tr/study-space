@@ -94,6 +94,13 @@ export const FlashcardsPage = () => {
             )}
           </div>
 
+          <div className="flex gap-2">
+          <Link
+            to={`/studyspace/${id}/flashcards/review`}
+            className="inline-flex items-center justify-center rounded-xs border border-primary bg-primary px-3 py-1.5 font-heading text-xs uppercase tracking-[0.14em] text-on-primary transition-colors duration-150 hover:border-primary-400 hover:bg-primary-400"
+          >
+            Review
+          </Link>
           <Button
             variant="secondary"
             size="sm"
@@ -105,6 +112,7 @@ export const FlashcardsPage = () => {
           >
             New flashcard
           </Button>
+          </div>
         </div>
 
         <Divider ornament className="max-w-40" />

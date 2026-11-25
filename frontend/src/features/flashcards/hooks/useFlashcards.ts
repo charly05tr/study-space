@@ -120,3 +120,13 @@ export const useConvertQuestions = () => {
     onSuccess: refresh,
   });
 };
+
+/** Cards to review now. Always refetched on mount: a stale queue would offer reviewed cards. */
+export const useDueQueue = (studyspaceId: number, newLimit: number) =>
+  useQuery({
+    queryKey: dueQueryKey(studyspaceId, newLimit),
+    queryFn: () => flashcardsApi.due(studyspaceId, { newLimit }),
+    enabled: Number.isFinite(studyspaceId),
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
