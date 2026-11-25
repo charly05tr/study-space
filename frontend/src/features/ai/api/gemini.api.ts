@@ -125,10 +125,26 @@ interface GenerateChunk {
 }
 
 
-interface StreamOptions {
+interface StreamOptions<TPartial> {
   signal?: AbortSignal;
   /** Called after each chunk with whatever the text so far parses to. */
-  onPartial?: (partial: PartialWritingReview) => void;
+  onPartial?: (partial: TPartial) => void;
+}
+
+/** What one structured generation needs; the transport is shared by every feature. */
+export interface StructuredRequest<TResult, TPartial> extends StreamOptions<TPartial> {
+  systemInstruction: string;
+  /** The user message: untrusted content, already delimited by the caller. */
+  prompt: string;
+  /** Gemini `responseSchema` (OpenAPI subset). */
+  schema: object;
+  temperature: number;
+  /** Turns the final text into a validated result, or throws. */
+  parse: (raw: string) => TResult;
+  /** Shown when Gemini refuses to answer. */
+  declinedMessage: string;
+  /** Shown when the answer was truncated by the output limit. */
+  cutOffMessage: string;
 }
 
 /** Parses one `data:` payload; a stream can carry an error object instead of a chunk. */
@@ -149,12 +165,12 @@ const parseChunk = (payload: string): GenerateChunk => {
 };
 
 /** Tolerates a half-written value; returns null while the text is not yet parsable. */
-const parsePartialReview = (text: string): PartialWritingReview | null => {
+const parsePartialObject = <TPartial>(text: string): TPartial | null => {
   try {
     // No `Allow.NUM`: a score cut mid-digit ("1" of 10) is dropped, not shown.
     const value: unknown = parsePartialJson(text, Allow.STR | Allow.OBJ | Allow.ARR);
     return typeof value === 'object' && value !== null && !Array.isArray(value)
-      ? (value as PartialWritingReview)
+      ? (value as TPartial)
       : null;
   } catch {
     return null;
@@ -162,27 +178,37 @@ const parsePartialReview = (text: string): PartialWritingReview | null => {
 };
 
 /**
- * Streams a review over SSE. `onPartial` receives growing snapshots; the return
- * value is the final, validated review, with the same errors as a single call.
- * A cancelled `signal` rejects with the native AbortError, not a GeminiError.
+ * Streams one structured generation over SSE. `onPartial` receives growing
+ * snapshots; the return value is the final, validated result, with the same
+ * errors as a single call. A cancelled `signal` rejects with the native
+ * AbortError, not a GeminiError.
  */
-export const streamReviewWriting = async (
+export const streamStructured = async <TResult, TPartial>(
   key: string,
   model: string,
-  text: string,
-  { signal, onPartial }: StreamOptions = {},
-): Promise<WritingReview> => {
+  {
+    systemInstruction,
+    prompt,
+    schema,
+    temperature,
+    parse,
+    declinedMessage,
+    cutOffMessage,
+    signal,
+    onPartial,
+  }: StructuredRequest<TResult, TPartial>,
+): Promise<TResult> => {
   const response = await send(`/${model}:streamGenerateContent?alt=sse`, key, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal,
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: REVIEW_SYSTEM_INSTRUCTION }] },
-      contents: [{ role: 'user', parts: [{ text: buildReviewPrompt(text) }] }],
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        responseSchema: WRITING_REVIEW_SCHEMA,
-        temperature: 0.3,
+        responseSchema: schema,
+        temperature,
       },
     }),
   });
@@ -204,7 +230,7 @@ export const streamReviewWriting = async (
     if (candidate?.finishReason) finishReason = candidate.finishReason;
     output += candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
 
-    const partial = output ? parsePartialReview(output) : null;
+    const partial = output ? parsePartialObject<TPartial>(output) : null;
     if (partial) onPartial?.(partial);
   };
 
@@ -232,26 +258,43 @@ export const streamReviewWriting = async (
     reader.releaseLock();
   }
 
-  const declined = 'Gemini declined to review this note.';
-  const cutOff = 'The review was cut off. Try a shorter note or selection.';
-
-  if (blocked) throw new GeminiError(declined);
-  if (finishReason && DECLINED_REASONS.has(finishReason)) throw new GeminiError(declined);
+  if (blocked) throw new GeminiError(declinedMessage);
+  if (finishReason && DECLINED_REASONS.has(finishReason)) throw new GeminiError(declinedMessage);
 
   if (!output) {
     throw new GeminiError(
-      finishReason === 'MAX_TOKENS' ? cutOff : 'Gemini returned an empty response. Please try again.',
+      finishReason === 'MAX_TOKENS'
+        ? cutOffMessage
+        : 'Gemini returned an empty response. Please try again.',
     );
   }
 
   try {
-    return parseWritingReview(output);
+    return parse(output);
   } catch (error) {
     // A truncated response is unparsable JSON; say why instead of "not valid".
-    if (finishReason === 'MAX_TOKENS') throw new GeminiError(cutOff);
+    if (finishReason === 'MAX_TOKENS') throw new GeminiError(cutOffMessage);
     throw error;
   }
 };
+
+/** Streams a writing review; see `streamStructured` for the contract. */
+export const streamReviewWriting = (
+  key: string,
+  model: string,
+  text: string,
+  options: StreamOptions<PartialWritingReview> = {},
+): Promise<WritingReview> =>
+  streamStructured<WritingReview, PartialWritingReview>(key, model, {
+    ...options,
+    systemInstruction: REVIEW_SYSTEM_INSTRUCTION,
+    prompt: buildReviewPrompt(text),
+    schema: WRITING_REVIEW_SCHEMA,
+    temperature: 0.3,
+    parse: parseWritingReview,
+    declinedMessage: 'Gemini declined to review this note.',
+    cutOffMessage: 'The review was cut off. Try a shorter note or selection.',
+  });
 
 /** Readable text for any failure, whether ours or an unexpected throw. */
 export const getAiErrorMessage = (error: unknown): string =>
