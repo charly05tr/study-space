@@ -1,3 +1,5 @@
+from django.utils import timezone
+from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from rest_framework import mixins, viewsets, status
@@ -11,8 +13,11 @@ from apps.studyspace.api.filters import (
     AnnotationFilter,
     BlockFilter,
     BlockLinkFilter,
+    FlashcardFilter,
     NoteReviewFilter,
     PlannedSessionFilter,
+    QuestionFilter,
+    QuizFilter,
     ReferenceFilter,
     StudySessionFilter,
 )
@@ -23,7 +28,9 @@ from apps.studyspace.services.note_service import NoteService
 from apps.studyspace.services.reference_service import ReferenceService
 from apps.studyspace.services.source_service import SourceService
 from apps.studyspace.services.annotation_service import AnnotationService
+from apps.studyspace.services.flashcard_service import FlashcardService
 from apps.studyspace.services.note_review_service import NoteReviewService
+from apps.studyspace.services.quiz_service import QuizService
 from apps.studyspace.services.study_session_service import StudySessionService
 from apps.studyspace.services.planned_session_service import PlannedSessionService
 
@@ -728,3 +735,224 @@ class BlockLinkViewSet(viewsets.ModelViewSet):
         # Despues de borrar: el huerfano que se queda sin ninguna relacion deja
         # de ser un nodo, y es lo unico que lo sacaba del mapa.
         self._reassign_ends(instance)
+
+
+def _assert_owned_studyspace(studyspace, user):
+    """get_queryset filters reads, not writes: without this a quiz or card
+    could be created in another account's studyspace by passing its id."""
+    owned = Studyspace.objects.filter(user=user)
+    if not owned.filter(pk=studyspace.pk).exists():
+        raise ValidationError("The studyspace does not exist or is not yours.")
+
+
+class QuizViewSet(viewsets.ModelViewSet):
+    """Quizzes of a studyspace. Created as drafts, with their questions, in a
+    single request; `publish` makes them available to study."""
+
+    permission_classes = [IsAuthenticated]
+    filterset_class = QuizFilter
+    pagination_class = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = QuizService()
+
+    def get_queryset(self):
+        qs = self.service.get_user_quizzes(user=self.request.user)
+        if self.action == 'retrieve':
+            qs = qs.prefetch_related('questions')
+        return qs
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return QuizCreateSerializer
+        if self.action in ('update', 'partial_update'):
+            return QuizUpdateSerializer
+        if self.action == 'list':
+            return QuizListSerializer
+        return QuizDetailSerializer
+
+    def _detail(self, quiz):
+        quiz = self.get_queryset().prefetch_related('questions').get(pk=quiz.pk)
+        return QuizDetailSerializer(quiz, context=self.get_serializer_context()).data
+
+    @extend_schema(request=QuizCreateSerializer, responses={201: QuizDetailSerializer})
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        questions = data.pop('questions', [])
+        studyspace = data.pop('studyspace')
+        _assert_owned_studyspace(studyspace, request.user)
+
+        quiz = self.service.create_quiz(studyspace=studyspace, data=data, questions=questions)
+        return Response(self._detail(quiz), status=status.HTTP_201_CREATED)
+
+    @extend_schema(request=QuizUpdateSerializer, responses={200: QuizDetailSerializer})
+    def update(self, request, *args, **kwargs):
+        quiz = self.get_object()
+        serializer = self.get_serializer(
+            quiz, data=request.data, partial=kwargs.pop('partial', False)
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(self._detail(quiz), status=status.HTTP_200_OK)
+
+    @extend_schema(request=None, responses={200: QuizDetailSerializer})
+    @action(detail=True, methods=['post'], url_path='publish')
+    def publish(self, request, pk=None):
+        """Drafts stay out of study and review. Rejected with 400 if the quiz
+        has no questions."""
+        quiz = self.service.publish(self.get_object())
+        return Response(self._detail(quiz), status=status.HTTP_200_OK)
+
+
+class QuestionViewSet(viewsets.ModelViewSet):
+    """Questions of a quiz, edited one by one after the quiz exists."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = QuestionSerializer
+    filterset_class = QuestionFilter
+    pagination_class = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = QuizService()
+
+    def get_queryset(self):
+        return self.service.get_user_questions(user=self.request.user).select_related(
+            'quiz', 'annotation'
+        )
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        quiz = data.pop('quiz')
+
+        owned = self.service.get_user_quizzes(user=request.user)
+        if not owned.filter(pk=quiz.pk).exists():
+            raise ValidationError("The quiz does not exist or is not yours.")
+
+        question = self.service.add_question(quiz, data)
+        return Response(self.get_serializer(question).data, status=status.HTTP_201_CREATED)
+
+    def perform_update(self, serializer):
+        if 'annotation' in serializer.validated_data:
+            self.service.check_annotation(
+                serializer.instance.quiz, serializer.validated_data['annotation']
+            )
+        serializer.save()
+
+
+class FlashcardViewSet(viewsets.ModelViewSet):
+    """Flashcards of a studyspace and their spaced-repetition review.
+
+    Editing front/back never touches the scheduling state; `reset-progress`
+    is the only way to clear it.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = FlashcardSerializer
+    filterset_class = FlashcardFilter
+    pagination_class = None
+
+    # Ceiling of the due queue, so one request cannot pull a whole library.
+    MAX_QUEUE = 500
+    DEFAULT_QUEUE = 100
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = FlashcardService()
+
+    def get_queryset(self):
+        return self.service.get_user_flashcards(user=self.request.user)
+
+    def perform_create(self, serializer):
+        _assert_owned_studyspace(serializer.validated_data['studyspace'], self.request.user)
+        # Manual cards start like converted ones: new and due now (model defaults).
+        serializer.save()
+
+    @staticmethod
+    def _int_param(request, name, default=None, maximum=None):
+        raw = request.query_params.get(name)
+        if raw in (None, ''):
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            raise ValidationError({name: "Must be a whole number."})
+        if value < 0:
+            raise ValidationError({name: "Must not be negative."})
+        return min(value, maximum) if maximum else value
+
+    @extend_schema(responses={200: FlashcardSerializer(many=True)})
+    @action(detail=False, methods=['get'], url_path='due')
+    def due(self, request):
+        """Cards to review now, oldest due first.
+
+        Query: `studyspace` (id), `new_limit` (max never-reviewed cards in the
+        queue), `limit` (max cards, default 100, cap 500).
+        """
+        queue = self.service.due_queue(
+            user=request.user,
+            now=timezone.now(),
+            studyspace=self._int_param(request, 'studyspace'),
+            new_limit=self._int_param(request, 'new_limit'),
+        )
+        limit = self._int_param(request, 'limit', self.DEFAULT_QUEUE, self.MAX_QUEUE)
+        return Response(FlashcardSerializer(queue[:limit], many=True).data)
+
+    @extend_schema(responses={200: FlashcardStatsSerializer(many=True)})
+    @action(detail=False, methods=['get'], url_path='stats')
+    def stats(self, request):
+        """Per studyspace counts: `total`, `new` (never reviewed) and `due`
+        (already reviewed, due date passed). Spaces without cards are absent."""
+        rows = self.service.stats(
+            user=request.user,
+            now=timezone.now(),
+            studyspace=self._int_param(request, 'studyspace'),
+        )
+        return Response(rows)
+
+    @extend_schema(
+        request=FlashcardFromQuestionsSerializer,
+        responses={200: FlashcardConversionResultSerializer, 201: FlashcardConversionResultSerializer},
+    )
+    @action(detail=False, methods=['post'], url_path='from-questions')
+    def from_questions(self, request):
+        """Copy questions into independent flashcards. Idempotent.
+
+        201 if at least one card was created, 200 otherwise. Ids that are
+        already converted come back in `skipped`, ids of draft quizzes in
+        `not_published`, and unknown or foreign ids in `not_found`.
+        """
+        serializer = FlashcardFromQuestionsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        result = self.service.convert_questions(
+            user=request.user,
+            question_ids=serializer.validated_data['question_ids'],
+            now=timezone.now(),
+        )
+        code = status.HTTP_201_CREATED if result['created'] else status.HTTP_200_OK
+        return Response(FlashcardConversionResultSerializer(result).data, status=code)
+
+    @extend_schema(request=FlashcardReviewSerializer, responses={200: FlashcardSerializer})
+    @action(detail=True, methods=['post'], url_path='review')
+    def review(self, request, pk=None):
+        """Rate a card (1 again, 2 hard, 3 good, 4 easy). A card that is not
+        due yet can be reviewed; it is logged like any other."""
+        card = self.get_object()
+        serializer = FlashcardReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        card = self.service.review(card, serializer.validated_data['rating'], timezone.now())
+        return Response(FlashcardSerializer(card).data)
+
+    @extend_schema(request=None, responses={200: FlashcardSerializer})
+    @action(detail=True, methods=['post'], url_path='reset-progress')
+    def reset_progress(self, request, pk=None):
+        """Back to a new card, due now. The review history is kept."""
+        card = self.service.reset_progress(self.get_object(), timezone.now())
+        return Response(FlashcardSerializer(card).data)

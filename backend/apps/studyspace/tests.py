@@ -2057,3 +2057,481 @@ class FlashcardServiceTests(TestCase):
             self.service.stats(self.user, self.NOW),
             [{'studyspace': self.space.pk, 'total': 3, 'new': 1, 'due': 1}],
         )
+
+
+class QuizApiTestCase(APITestCase):
+    """Shared fixtures for the quiz, question and flashcard endpoints."""
+
+    MC = {
+        'type': 'multiple_choice',
+        'prompt': 'Which one is a scheduler?',
+        'options': ['Round robin', 'Paging', 'Swap'],
+        'correct_answer': 0,
+        'explanation': 'It rotates the CPU.',
+    }
+    TF = {'type': 'true_false', 'prompt': 'Paging is a scheduler.', 'correct_answer': False}
+    SA = {'type': 'short_answer', 'prompt': 'Define a page fault.', 'correct_answer': 'A missing page.'}
+
+    def setUp(self):
+        from apps.studyspace.models import Studyspace
+        from apps.users.models import User
+
+        self.user = User.objects.create_user(email="q@example.com", username="q", password="x")
+        self.intruder = User.objects.create_user(email="o@example.com", username="o", password="x")
+        self.space = Studyspace.objects.create(title="OS", description="", user=self.user)
+        self.foreign_space = Studyspace.objects.create(title="Theirs", description="", user=self.intruder)
+        self.client.force_authenticate(self.user)
+
+    def _quiz(self, questions=None, **overrides):
+        payload = {'studyspace': self.space.pk, 'title': 'Midterm', 'origin': 'ai',
+                   'prompt': 'Quiz me', 'language': 'en', 'model': 'gemini-test'}
+        payload['questions'] = [self.MC, self.TF, self.SA] if questions is None else questions
+        payload.update(overrides)
+        return self.client.post('/api/quizzes/', payload, format='json')
+
+    def _published(self, questions=None):
+        quiz = self._quiz(questions).json()
+        self.assertEqual(self.client.post(f"/api/quizzes/{quiz['id']}/publish/").status_code, 200)
+        return quiz
+
+    def _annotation(self, space=None):
+        from apps.studyspace.models import Annotation, Source
+
+        source = Source.objects.create(
+            title="Book", source_type='pdf', file='sources/book.pdf',
+            study_space=space or self.space,
+        )
+        return Annotation.objects.create(
+            source=source, annotation_type='highlight', content="text", anchor="b-1", page=1, ranges=[]
+        )
+
+
+class QuizApiTests(QuizApiTestCase):
+    def test_a_whole_draft_quiz_is_created_in_one_request(self):
+        response = self._quiz()
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual((body['status'], body['origin'], body['question_count']), ('draft', 'ai', 3))
+        self.assertEqual(body['prompt'], 'Quiz me')
+        self.assertEqual([q['position'] for q in body['questions']], [0, 1, 2])
+        self.assertEqual([q['type'] for q in body['questions']], ['multiple_choice', 'true_false', 'short_answer'])
+        self.assertEqual(body['questions'][0]['correct_answer'], 0)
+        self.assertIs(body['questions'][1]['correct_answer'], False)
+
+    def test_status_cannot_be_chosen_on_create(self):
+        self.assertEqual(self._quiz(status='published').json()['status'], 'draft')
+
+    def test_an_invalid_question_creates_nothing(self):
+        from apps.studyspace.models import Quiz
+
+        bad = {**self.MC, 'correct_answer': 9}
+        self.assertEqual(self._quiz([self.TF, bad]).status_code, 400)
+        self.assertEqual(Quiz.objects.count(), 0)
+
+    def test_a_manual_quiz_can_start_empty(self):
+        body = self._quiz([], origin='manual', prompt='').json()
+        self.assertEqual((body['origin'], body['question_count'], body['questions']), ('manual', 0, []))
+
+    def test_cannot_create_in_another_accounts_studyspace(self):
+        from apps.studyspace.models import Quiz
+
+        self.assertEqual(self._quiz(studyspace=self.foreign_space.pk).status_code, 400)
+        self.assertEqual(Quiz.objects.count(), 0)
+
+    def test_per_type_validation(self):
+        bad_questions = [
+            {**self.MC, 'options': ['only one']},
+            {**self.MC, 'correct_answer': -1},
+            {**self.MC, 'correct_answer': True},
+            {**self.MC, 'correct_answer': '0'},
+            {**self.MC, 'options': ['a', '']},
+            {**self.TF, 'correct_answer': 'true'},
+            {**self.TF, 'correct_answer': 1},
+            {**self.SA, 'correct_answer': '   '},
+            {**self.SA, 'correct_answer': 5},
+            {**self.SA, 'correct_answer': None},
+            {**self.SA, 'type': 'essay'},
+            {'type': 'short_answer', 'correct_answer': 'x'},
+        ]
+        for question in bad_questions:
+            self.assertEqual(self._quiz([question]).status_code, 400, question)
+
+    def test_options_are_dropped_for_non_multiple_choice(self):
+        body = self._quiz([{**self.TF, 'options': ['a', 'b']}]).json()
+        self.assertEqual(body['questions'][0]['options'], [])
+
+    def test_publishing_a_quiz_without_questions_is_rejected(self):
+        quiz = self._quiz([], origin='manual').json()
+        self.assertEqual(self.client.post(f"/api/quizzes/{quiz['id']}/publish/").status_code, 400)
+        self.assertEqual(self.client.get(f"/api/quizzes/{quiz['id']}/").json()['status'], 'draft')
+
+    def test_publish_makes_the_quiz_available(self):
+        quiz = self._published()
+        body = self.client.get(f"/api/quizzes/{quiz['id']}/").json()
+        self.assertEqual(body['status'], 'published')
+        self.assertEqual(len(body['questions']), 3)
+
+    def test_list_is_filterable_and_carries_counts_without_questions(self):
+        self._published()
+        self._quiz(origin='manual')
+        listing = self.client.get('/api/quizzes/', {'studyspace': self.space.pk, 'status': 'published'})
+        rows = listing.json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['question_count'], 3)
+        self.assertNotIn('questions', rows[0])
+        self.assertEqual(len(self.client.get('/api/quizzes/', {'origin': 'manual'}).json()), 1)
+
+    def test_metadata_can_be_edited_but_not_the_status(self):
+        quiz = self._quiz().json()
+        url = f"/api/quizzes/{quiz['id']}/"
+        body = self.client.patch(url, {'title': 'Final', 'status': 'published'}, format='json').json()
+        self.assertEqual((body['title'], body['status']), ('Final', 'draft'))
+        self.assertEqual(len(body['questions']), 3)
+
+    def test_another_account_gets_404_everywhere(self):
+        quiz = self._published()
+        url = f"/api/quizzes/{quiz['id']}/"
+        self.client.force_authenticate(self.intruder)
+
+        self.assertEqual(self.client.get('/api/quizzes/').json(), [])
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.patch(url, {'title': 'x'}, format='json').status_code, 404)
+        self.assertEqual(self.client.post(f"{url}publish/").status_code, 404)
+        self.assertEqual(self.client.delete(url).status_code, 404)
+
+    def test_foreign_and_missing_filters_look_the_same(self):
+        self._quiz()
+        self.client.force_authenticate(self.intruder)
+        self.assertEqual(self.client.get('/api/quizzes/', {'studyspace': self.space.pk}).json(), [])
+
+    def test_deleting_a_quiz_deletes_its_questions_but_keeps_the_flashcards(self):
+        from apps.studyspace.models import Flashcard, Question
+
+        quiz = self._published()
+        question_ids = [q['id'] for q in quiz['questions']]
+        self.client.post('/api/flashcards/from-questions/', {'question_ids': question_ids}, format='json')
+
+        self.assertEqual(self.client.delete(f"/api/quizzes/{quiz['id']}/").status_code, 204)
+        self.assertEqual(Question.objects.count(), 0)
+        self.assertEqual(Flashcard.objects.count(), 3)
+        self.assertTrue(all(card.question_id is None for card in Flashcard.objects.all()))
+
+
+class QuestionApiTests(QuizApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.quiz = self._quiz([self.MC]).json()
+
+    def _add(self, question, **overrides):
+        return self.client.post(
+            '/api/questions/', {'quiz': self.quiz['id'], **question, **overrides}, format='json'
+        )
+
+    def test_questions_are_appended_in_order(self):
+        body = self._add(self.TF).json()
+        self.assertEqual(body['position'], 1)
+        self.assertEqual(self._add(self.SA).json()['position'], 2)
+
+    def test_per_type_validation_applies_here_too(self):
+        self.assertEqual(self._add({**self.MC, 'options': ['x']}).status_code, 400)
+        self.assertEqual(self._add({**self.TF, 'correct_answer': 'yes'}).status_code, 400)
+
+    def test_patch_revalidates_against_the_stored_question(self):
+        question = self.client.get(f"/api/quizzes/{self.quiz['id']}/").json()['questions'][0]
+        url = f"/api/questions/{question['id']}/"
+
+        self.assertEqual(self.client.patch(url, {'correct_answer': 7}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(url, {'prompt': 'New text'}, format='json').status_code, 200)
+        ok = self.client.patch(url, {'correct_answer': 2}, format='json').json()
+        self.assertEqual((ok['prompt'], ok['correct_answer']), ('New text', 2))
+
+    def test_the_quiz_of_a_question_cannot_be_changed(self):
+        other = self._quiz([self.TF]).json()
+        question = self.client.get(f"/api/quizzes/{self.quiz['id']}/").json()['questions'][0]
+        body = self.client.patch(
+            f"/api/questions/{question['id']}/", {'quiz': other['id']}, format='json'
+        ).json()
+        self.assertEqual(body['quiz'], self.quiz['id'])
+
+    def test_cannot_add_to_another_accounts_quiz(self):
+        self.client.force_authenticate(self.intruder)
+        self.assertEqual(self._add(self.TF).status_code, 400)
+
+    def test_another_account_cannot_read_edit_or_delete_questions(self):
+        question = self.client.get(f"/api/quizzes/{self.quiz['id']}/").json()['questions'][0]
+        url = f"/api/questions/{question['id']}/"
+        self.client.force_authenticate(self.intruder)
+
+        self.assertEqual(self.client.get('/api/questions/').json(), [])
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.patch(url, {'prompt': 'x'}, format='json').status_code, 404)
+        self.assertEqual(self.client.delete(url).status_code, 404)
+
+    def test_filtering_by_quiz(self):
+        other = self._quiz([self.TF, self.SA]).json()
+        rows = self.client.get('/api/questions/', {'quiz': other['id']}).json()
+        self.assertEqual(len(rows), 2)
+
+    def test_an_annotation_can_be_the_origin_and_deleting_it_keeps_the_question(self):
+        from apps.studyspace.models import Question
+
+        annotation = self._annotation()
+        body = self._add(self.TF, annotation=annotation.pk).json()
+        self.assertEqual(body['annotation'], annotation.pk)
+
+        annotation.delete()
+        question = Question.objects.get(pk=body['id'])
+        self.assertIsNone(question.annotation_id)
+
+    def test_foreign_annotations_are_refused(self):
+        foreign = self._annotation(space=self.foreign_space)
+        self.assertEqual(self._add(self.TF, annotation=foreign.pk).status_code, 400)
+        self.assertEqual(self._quiz([{**self.TF, 'annotation': foreign.pk}]).status_code, 400)
+
+    def test_annotations_from_another_of_my_spaces_are_refused(self):
+        from apps.studyspace.models import Studyspace
+
+        elsewhere = Studyspace.objects.create(title="Other", description="", user=self.user)
+        annotation = self._annotation(space=elsewhere)
+        self.assertEqual(self._add(self.TF, annotation=annotation.pk).status_code, 400)
+
+
+class FlashcardApiTests(QuizApiTestCase):
+    URL = '/api/flashcards/'
+
+    def _convert(self, ids):
+        return self.client.post(f"{self.URL}from-questions/", {'question_ids': ids}, format='json')
+
+    def _question_ids(self, quiz):
+        return [q['id'] for q in quiz['questions']]
+
+    def test_questions_become_independent_flashcards(self):
+        quiz = self._published()
+        response = self._convert(self._question_ids(quiz))
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual((body['skipped'], body['not_published'], body['not_found']), ([], [], []))
+
+        mc, tf, sa = body['created']
+        self.assertEqual(mc['front'], 'Which one is a scheduler?')
+        self.assertEqual(mc['back'], 'Round robin\n\nIt rotates the CPU.')
+        self.assertEqual(tf['back'], 'False')
+        self.assertEqual(sa['back'], 'A missing page.')
+        self.assertEqual((mc['state'], mc['reps'], mc['studyspace']), (0, 0, self.space.pk))
+
+    def test_converting_twice_is_idempotent(self):
+        from apps.studyspace.models import Flashcard
+
+        ids = self._question_ids(self._published())
+        self._convert(ids)
+        again = self._convert(ids)
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual((again.json()['created'], sorted(again.json()['skipped'])), ([], sorted(ids)))
+        self.assertEqual(Flashcard.objects.count(), 3)
+
+    def test_duplicate_ids_in_one_request_make_one_card(self):
+        from apps.studyspace.models import Flashcard
+
+        ids = self._question_ids(self._published([self.TF]))
+        self._convert(ids * 3)
+        self.assertEqual(Flashcard.objects.count(), 1)
+
+    def test_draft_quizzes_are_not_converted(self):
+        from apps.studyspace.models import Flashcard
+
+        draft = self._quiz().json()
+        body = self._convert(self._question_ids(draft)).json()
+        self.assertEqual((body['created'], len(body['not_published'])), ([], 3))
+        self.assertEqual(Flashcard.objects.count(), 0)
+
+    def test_other_accounts_questions_are_not_converted(self):
+        from apps.studyspace.models import Flashcard
+
+        ids = self._question_ids(self._published())
+        self.client.force_authenticate(self.intruder)
+        body = self._convert(ids + [999999]).json()
+        self.assertEqual(body['created'], [])
+        self.assertEqual(sorted(body['not_found']), sorted(ids + [999999]))
+        self.assertEqual(Flashcard.objects.count(), 0)
+
+    def test_the_conversion_request_is_validated(self):
+        for payload in ({}, {'question_ids': []}, {'question_ids': ['x']}, {'question_ids': [0]},
+                        {'question_ids': list(range(1, 202))}):
+            self.assertEqual(self.client.post(f"{self.URL}from-questions/", payload, format='json').status_code, 400)
+
+    def test_cards_are_copies_editing_either_side_never_touches_the_other(self):
+        from apps.studyspace.models import Question
+
+        quiz = self._published([self.TF])
+        question_id = quiz['questions'][0]['id']
+        card = self._convert([question_id]).json()['created'][0]
+
+        self.client.patch(f"/api/questions/{question_id}/", {'prompt': 'Changed'}, format='json')
+        self.assertEqual(self.client.get(f"{self.URL}{card['id']}/").json()['front'], 'Paging is a scheduler.')
+
+        self.client.patch(f"{self.URL}{card['id']}/", {'front': 'Mine'}, format='json')
+        self.assertEqual(Question.objects.get(pk=question_id).prompt, 'Changed')
+
+        self.client.delete(f"/api/questions/{question_id}/")
+        remaining = self.client.get(f"{self.URL}{card['id']}/").json()
+        self.assertEqual((remaining['front'], remaining['question']), ('Mine', None))
+
+    def test_deleting_a_card_does_not_touch_the_question_and_it_can_be_converted_again(self):
+        from apps.studyspace.models import Question
+
+        quiz = self._published([self.TF])
+        question_id = quiz['questions'][0]['id']
+        card = self._convert([question_id]).json()['created'][0]
+
+        self.assertEqual(self.client.delete(f"{self.URL}{card['id']}/").status_code, 204)
+        self.assertTrue(Question.objects.filter(pk=question_id).exists())
+        self.assertEqual(len(self._convert([question_id]).json()['created']), 1)
+
+    def test_a_card_can_be_created_by_hand(self):
+        response = self.client.post(
+            self.URL, {'studyspace': self.space.pk, 'front': 'Q', 'back': 'A'}, format='json'
+        )
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual((body['state'], body['question'], body['reps']), (0, None, 0))
+
+    def test_scheduling_fields_cannot_be_written(self):
+        card = self.client.post(
+            self.URL, {'studyspace': self.space.pk, 'front': 'Q', 'back': 'A', 'reps': 50, 'state': 2},
+            format='json',
+        ).json()
+        self.assertEqual((card['reps'], card['state']), (0, 0))
+        patched = self.client.patch(f"{self.URL}{card['id']}/", {'lapses': 9, 'stability': 3}, format='json').json()
+        self.assertEqual((patched['lapses'], patched['stability']), (0, None))
+
+    def test_cannot_create_a_card_in_another_accounts_studyspace(self):
+        response = self.client.post(
+            self.URL, {'studyspace': self.foreign_space.pk, 'front': 'Q', 'back': 'A'}, format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def _card(self):
+        return self.client.post(
+            self.URL, {'studyspace': self.space.pk, 'front': 'Q', 'back': 'A'}, format='json'
+        ).json()
+
+    def test_review_schedules_the_card_and_logs_it(self):
+        from apps.studyspace.models import ReviewLog
+
+        card = self._card()
+        response = self.client.post(f"{self.URL}{card['id']}/review/", {'rating': 3}, format='json')
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual((body['reps'], body['state']), (1, 1))
+        self.assertGreater(body['due'], card['due'])
+        self.assertIsNotNone(body['stability'])
+        self.assertEqual(ReviewLog.objects.get().rating, 3)
+
+    def test_a_rating_out_of_range_is_a_400(self):
+        from apps.studyspace.models import ReviewLog
+
+        card = self._card()
+        for bad in (0, 5, -2, 'good', None):
+            response = self.client.post(f"{self.URL}{card['id']}/review/", {'rating': bad}, format='json')
+            self.assertEqual(response.status_code, 400, bad)
+        self.assertEqual(self.client.post(f"{self.URL}{card['id']}/review/", {}, format='json').status_code, 400)
+        self.assertEqual(ReviewLog.objects.count(), 0)
+
+    def test_reviewing_a_card_that_is_not_due_is_allowed(self):
+        card = self._card()
+        self.client.post(f"{self.URL}{card['id']}/review/", {'rating': 4}, format='json')
+        again = self.client.post(f"{self.URL}{card['id']}/review/", {'rating': 4}, format='json')
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()['reps'], 2)
+
+    def test_editing_a_card_keeps_its_progress(self):
+        card = self._card()
+        reviewed = self.client.post(f"{self.URL}{card['id']}/review/", {'rating': 3}, format='json').json()
+
+        edited = self.client.patch(f"{self.URL}{card['id']}/", {'front': 'New front', 'back': 'New back'}, format='json').json()
+        for field in ('state', 'stability', 'difficulty', 'due', 'reps', 'lapses', 'last_review'):
+            self.assertEqual(edited[field], reviewed[field], field)
+        self.assertEqual(edited['front'], 'New front')
+
+    def test_reset_progress_clears_the_schedule_only_when_asked(self):
+        card = self._card()
+        self.client.post(f"{self.URL}{card['id']}/review/", {'rating': 3}, format='json')
+
+        reset = self.client.post(f"{self.URL}{card['id']}/reset-progress/")
+        self.assertEqual(reset.status_code, 200)
+        body = reset.json()
+        self.assertEqual((body['state'], body['reps'], body['lapses'], body['stability']), (0, 0, 0, None))
+        self.assertIsNone(body['last_review'])
+
+    def test_due_queue_returns_due_cards_and_honours_the_limits(self):
+        from datetime import timedelta
+        from django.utils import timezone as dj_timezone
+        from apps.studyspace.models import Flashcard
+
+        cards = [self._card() for _ in range(3)]
+        reviewed = self.client.post(f"{self.URL}{cards[0]['id']}/review/", {'rating': 3}, format='json').json()
+        Flashcard.objects.filter(pk=reviewed['id']).update(due=dj_timezone.now() - timedelta(days=1))
+
+        queue = self.client.get(f"{self.URL}due/").json()
+        self.assertEqual([c['id'] for c in queue][0], reviewed['id'])
+        self.assertEqual(len(queue), 3)
+
+        capped = self.client.get(f"{self.URL}due/", {'new_limit': 1}).json()
+        self.assertEqual(len(capped), 2)
+        self.assertEqual(len(self.client.get(f"{self.URL}due/", {'limit': 1}).json()), 1)
+        self.assertEqual(self.client.get(f"{self.URL}due/", {'limit': 'x'}).status_code, 400)
+
+    def test_due_queue_can_be_scoped_to_a_space_and_skips_what_is_not_due(self):
+        from apps.studyspace.models import Studyspace
+
+        card = self._card()
+        other = Studyspace.objects.create(title="Other", description="", user=self.user)
+        self.client.post(self.URL, {'studyspace': other.pk, 'front': 'Q2', 'back': 'A2'}, format='json')
+
+        scoped = self.client.get(f"{self.URL}due/", {'studyspace': self.space.pk}).json()
+        self.assertEqual([c['id'] for c in scoped], [card['id']])
+
+        self.client.post(f"{self.URL}{card['id']}/review/", {'rating': 4}, format='json')
+        after = self.client.get(f"{self.URL}due/", {'studyspace': self.space.pk}).json()
+        self.assertEqual(after, [])
+
+    def test_stats_report_counts_per_space(self):
+        from datetime import timedelta
+        from django.utils import timezone as dj_timezone
+        from apps.studyspace.models import Flashcard
+
+        first, second = self._card(), self._card()
+        self._card()
+        self.client.post(f"{self.URL}{first['id']}/review/", {'rating': 3}, format='json')
+        self.client.post(f"{self.URL}{second['id']}/review/", {'rating': 3}, format='json')
+        Flashcard.objects.filter(pk=first['id']).update(due=dj_timezone.now() - timedelta(hours=1))
+
+        rows = self.client.get(f"{self.URL}stats/").json()
+        self.assertEqual(rows, [{'studyspace': self.space.pk, 'total': 3, 'new': 1, 'due': 1}])
+
+    def test_stats_ignore_other_accounts(self):
+        self._card()
+        self.client.force_authenticate(self.intruder)
+        self.assertEqual(self.client.get(f"{self.URL}stats/").json(), [])
+        self.assertEqual(self.client.get(f"{self.URL}due/").json(), [])
+
+    def test_another_account_gets_404_on_every_card_route(self):
+        card = self._card()
+        url = f"{self.URL}{card['id']}/"
+        self.client.force_authenticate(self.intruder)
+
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.patch(url, {'front': 'x'}, format='json').status_code, 404)
+        self.assertEqual(self.client.post(f"{url}review/", {'rating': 3}, format='json').status_code, 404)
+        self.assertEqual(self.client.post(f"{url}reset-progress/").status_code, 404)
+        self.assertEqual(self.client.delete(url).status_code, 404)
+
+    def test_the_list_can_be_filtered(self):
+        from apps.studyspace.models import Studyspace
+
+        self._card()
+        other = Studyspace.objects.create(title="Other", description="", user=self.user)
+        self.client.post(self.URL, {'studyspace': other.pk, 'front': 'Q', 'back': 'A'}, format='json')
+        self.assertEqual(len(self.client.get(self.URL, {'studyspace': other.pk}).json()), 1)
+        self.assertEqual(len(self.client.get(self.URL, {'state': 0}).json()), 2)
+        self.assertEqual(len(self.client.get(self.URL, {'due': 'false'}).json()), 0)

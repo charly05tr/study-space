@@ -2,8 +2,8 @@ from django.db.models import F, Q
 from django_filters import rest_framework as filters
 
 from apps.studyspace.models import (
-    Annotation, Block, BlockLink, NoteReview, PlannedSession, Reference,
-    StudySession,
+    Annotation, Block, BlockLink, Flashcard, NoteReview, PlannedSession, Question,
+    Quiz, Reference, StudySession,
 )
 
 
@@ -143,3 +143,45 @@ class BlockLinkFilter(filters.FilterSet):
         from django.db.models import Q
 
         return queryset.filter(Q(source=value) | Q(target=value))
+
+
+class QuizFilter(filters.FilterSet):
+    """Quizzes are read per studyspace; `status` separates drafts from the
+    ones available to study."""
+
+    class Meta:
+        model = Quiz
+        fields = ['studyspace', 'status', 'origin']
+
+
+class QuestionFilter(filters.FilterSet):
+    """Raw ids, not model choices: a foreign id and a missing one must answer
+    the same (an empty list), or the filter leaks which ids exist."""
+
+    quiz = filters.NumberFilter(field_name='quiz_id')
+    studyspace = filters.NumberFilter(field_name='quiz__studyspace_id')
+    type = filters.CharFilter(field_name='question_type')
+
+    class Meta:
+        model = Question
+        fields = ['quiz', 'studyspace', 'type']
+
+
+class FlashcardFilter(filters.FilterSet):
+    """`due=true` keeps the cards whose due date has passed."""
+
+    studyspace = filters.NumberFilter(field_name='studyspace_id')
+    question = filters.NumberFilter(field_name='question_id')
+    due = filters.BooleanFilter(method='filter_due')
+
+    class Meta:
+        model = Flashcard
+        fields = ['studyspace', 'question', 'state', 'due']
+
+    def filter_due(self, queryset, name, value):
+        if value is None:
+            return queryset
+        from django.utils import timezone
+
+        now = timezone.now()
+        return queryset.filter(due__lte=now) if value else queryset.filter(due__gt=now)

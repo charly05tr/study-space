@@ -3,7 +3,7 @@ import math
 from rest_framework import serializers
 from apps.studyspace.models import (
     Studyspace, Note, Source, NoteImage, Annotation, Reference, Block, BlockLink,
-    StudySession, PlannedSession, NoteReview,
+    StudySession, PlannedSession, NoteReview, Quiz, Question, Flashcard,
 )
 
 
@@ -658,3 +658,217 @@ class NoteReviewSerializer(serializers.ModelSerializer):
         if not attrs.get('language'):
             attrs['language'] = attrs['result']['language']
         return attrs
+
+
+QUIZ_MAX_QUESTIONS = 100
+QUESTION_MAX_OPTIONS = 8
+QUESTION_MAX_OPTION_LENGTH = 500
+QUESTION_MAX_TEXT = 5000
+FLASHCARD_MAX_TEXT = 10000
+FROM_QUESTIONS_MAX_IDS = 200
+
+
+class QuestionBaseSerializer(serializers.ModelSerializer):
+    """Fields and per-type rules shared by standalone and nested questions.
+
+    The wire name for the type is `type`; the model column is `question_type`.
+    """
+
+    type = serializers.ChoiceField(choices=Question.QuestionType.choices, source='question_type')
+    prompt = serializers.CharField(max_length=QUESTION_MAX_TEXT)
+    explanation = serializers.CharField(
+        max_length=QUESTION_MAX_TEXT, required=False, allow_blank=True
+    )
+    options = serializers.ListField(
+        child=serializers.CharField(max_length=QUESTION_MAX_OPTION_LENGTH, allow_blank=False),
+        required=False,
+        max_length=QUESTION_MAX_OPTIONS,
+    )
+    # int (multiple_choice index) | bool (true_false) | str (short_answer).
+    correct_answer = serializers.JSONField()
+    annotation = serializers.PrimaryKeyRelatedField(
+        queryset=Annotation.objects.all(), required=False, allow_null=True
+    )
+
+    def validate_annotation(self, annotation):
+        """The origin highlight must be one of the user's own."""
+        request = self.context.get('request')
+        if annotation is not None and request is not None:
+            if annotation.source.study_space.user_id != request.user.pk:
+                raise serializers.ValidationError("The annotation does not exist or is not yours.")
+        return annotation
+
+    def validate(self, attrs):
+        # On a partial update, rules are checked against the merged state.
+        current = self.instance
+        kind = attrs.get('question_type', getattr(current, 'question_type', None))
+        options = attrs.get('options', getattr(current, 'options', []) if current else [])
+        answer = attrs.get('correct_answer', getattr(current, 'correct_answer', None))
+
+        # Nothing about the answer changed on a partial update: skip the checks.
+        touched = {'question_type', 'options', 'correct_answer'} & set(attrs)
+        if current is not None and not touched:
+            return attrs
+
+        if kind == Question.QuestionType.MULTIPLE_CHOICE:
+            if len(options) < 2:
+                raise serializers.ValidationError(
+                    {'options': "A multiple choice question needs at least 2 options."}
+                )
+            if isinstance(answer, bool) or not isinstance(answer, int) or not 0 <= answer < len(options):
+                raise serializers.ValidationError(
+                    {'correct_answer': "Must be the index of one of the options."}
+                )
+        elif kind == Question.QuestionType.TRUE_FALSE:
+            if not isinstance(answer, bool):
+                raise serializers.ValidationError({'correct_answer': "Must be true or false."})
+            attrs['options'] = []
+        elif kind == Question.QuestionType.SHORT_ANSWER:
+            if not isinstance(answer, str) or not answer.strip():
+                raise serializers.ValidationError(
+                    {'correct_answer': "Must be the reference answer as text."}
+                )
+            if len(answer) > QUESTION_MAX_TEXT:
+                raise serializers.ValidationError({'correct_answer': "Answer is too long."})
+            attrs['options'] = []
+        return attrs
+
+
+class QuestionNestedSerializer(QuestionBaseSerializer):
+    """A question inside a quiz: no `quiz` field, order is the list order."""
+
+    class Meta:
+        model = Question
+        fields = [
+            'id', 'position', 'type', 'prompt', 'options', 'correct_answer',
+            'explanation', 'annotation', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'position', 'created_at', 'updated_at']
+
+
+class QuestionSerializer(QuestionBaseSerializer):
+    """A question on its own (/questions/). `quiz` is fixed once created."""
+
+    quiz = serializers.PrimaryKeyRelatedField(queryset=Quiz.objects.all())
+    position = serializers.IntegerField(required=False, min_value=0)
+
+    class Meta:
+        model = Question
+        fields = [
+            'id', 'quiz', 'position', 'type', 'prompt', 'options', 'correct_answer',
+            'explanation', 'annotation', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def update(self, instance, validated_data):
+        validated_data.pop('quiz', None)
+        return super().update(instance, validated_data)
+
+
+class QuizListSerializer(serializers.ModelSerializer):
+    question_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Quiz
+        fields = [
+            'id', 'studyspace', 'title', 'description', 'origin', 'status',
+            'language', 'model', 'question_count', 'created_at', 'updated_at',
+        ]
+
+
+class QuizDetailSerializer(QuizListSerializer):
+    questions = QuestionNestedSerializer(many=True, read_only=True)
+
+    class Meta(QuizListSerializer.Meta):
+        fields = QuizListSerializer.Meta.fields + ['prompt', 'questions']
+
+
+class QuizCreateSerializer(serializers.ModelSerializer):
+    """Create a whole draft quiz, questions included, in one request.
+
+    `status` is never accepted: a quiz is born a draft and is published with
+    its own action.
+    """
+
+    studyspace = serializers.PrimaryKeyRelatedField(queryset=Studyspace.objects.all())
+    questions = QuestionNestedSerializer(many=True, required=False, max_length=QUIZ_MAX_QUESTIONS)
+
+    class Meta:
+        model = Quiz
+        fields = [
+            'studyspace', 'title', 'description', 'origin', 'prompt',
+            'language', 'model', 'questions',
+        ]
+        extra_kwargs = {
+            'description': {'required': False},
+            'prompt': {'required': False},
+            'language': {'required': False},
+            'model': {'required': False},
+        }
+
+
+class QuizUpdateSerializer(serializers.ModelSerializer):
+    """Metadata only. Questions are edited through /questions/."""
+
+    class Meta:
+        model = Quiz
+        fields = ['title', 'description', 'language']
+
+
+class FlashcardSerializer(serializers.ModelSerializer):
+    """A flashcard. Only the content is writable: the scheduling state moves
+    through review / reset-progress so an edit can never wipe progress.
+
+    `state`: 0 new, 1 learning, 2 review, 3 relearning.
+    """
+
+    studyspace = serializers.PrimaryKeyRelatedField(queryset=Studyspace.objects.all())
+    front = serializers.CharField(max_length=FLASHCARD_MAX_TEXT)
+    back = serializers.CharField(max_length=FLASHCARD_MAX_TEXT)
+
+    class Meta:
+        model = Flashcard
+        fields = [
+            'id', 'studyspace', 'question', 'front', 'back', 'state', 'step',
+            'stability', 'difficulty', 'due', 'last_review', 'reps', 'lapses',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'question', 'state', 'step', 'stability', 'difficulty', 'due',
+            'last_review', 'reps', 'lapses', 'created_at', 'updated_at',
+        ]
+
+    def update(self, instance, validated_data):
+        # The space is fixed: moving a card is not an edit.
+        validated_data.pop('studyspace', None)
+        return super().update(instance, validated_data)
+
+
+class FlashcardReviewSerializer(serializers.Serializer):
+    """1 again, 2 hard, 3 good, 4 easy."""
+
+    rating = serializers.IntegerField(min_value=1, max_value=4)
+
+
+class FlashcardFromQuestionsSerializer(serializers.Serializer):
+    question_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        max_length=FROM_QUESTIONS_MAX_IDS,
+    )
+
+
+class FlashcardConversionResultSerializer(serializers.Serializer):
+    """Response of from-questions."""
+
+    created = FlashcardSerializer(many=True)
+    skipped = serializers.ListField(child=serializers.IntegerField())
+    not_published = serializers.ListField(child=serializers.IntegerField())
+    not_found = serializers.ListField(child=serializers.IntegerField())
+
+
+class FlashcardStatsSerializer(serializers.Serializer):
+    studyspace = serializers.IntegerField()
+    total = serializers.IntegerField()
+    new = serializers.IntegerField()
+    due = serializers.IntegerField()

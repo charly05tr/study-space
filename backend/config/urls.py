@@ -21,6 +21,9 @@ from apps.studyspace.api.views import (
     BlockLinkViewSet,
     StudySessionViewSet,
     PlannedSessionViewSet,
+    QuizViewSet,
+    QuestionViewSet,
+    FlashcardViewSet,
 )
 from apps.studyspace.views import pdf_to_html_view, source_html_view
 
@@ -36,6 +39,9 @@ router.register(r'blocks', BlockViewSet, basename='blocks')
 router.register(r'block-links', BlockLinkViewSet, basename='block-links')
 router.register(r'study-sessions', StudySessionViewSet, basename='study-sessions')
 router.register(r'planned-sessions', PlannedSessionViewSet, basename='planned-sessions')
+router.register(r'quizzes', QuizViewSet, basename='quizzes')
+router.register(r'questions', QuestionViewSet, basename='questions')
+router.register(r'flashcards', FlashcardViewSet, basename='flashcards')
 
 urlpatterns = [
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
