@@ -23,9 +23,6 @@ export const STATE_LABELS: Record<FlashcardState, string> = {
 /** Mirrors the backend limit so a form can refuse what the API would. */
 export const MAX_FLASHCARD_TEXT = 10000;
 
-/** Never-reviewed cards the review queue admits per session. */
-export const DEFAULT_NEW_LIMIT = 10;
-
 export interface Flashcard {
   id: number;
   studyspace: number;
@@ -76,6 +73,14 @@ export interface FlashcardStats {
   new: number;
   /** Reviewed before, and overdue now. New cards are not counted here. */
   due: number;
+}
+
+/** What a review request came back with. */
+export interface ReviewOutcome {
+  /** The card as the server has it now. */
+  card: Flashcard;
+  /** The server had already reviewed this card (409): this request changed nothing. */
+  alreadyReviewed: boolean;
 }
 
 export interface ConversionResult {

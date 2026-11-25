@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { flashcardsApi } from '../api/flashcards.api';
 import type {
   CreateFlashcardPayload,
+  Flashcard,
   FlashcardContent,
   FlashcardFilters,
   FlashcardStats,
@@ -98,8 +99,8 @@ export const useResetFlashcard = () => {
 export const useReviewFlashcard = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ flashcardId, rating }: { flashcardId: number; rating: Rating }) =>
-      flashcardsApi.review(flashcardId, rating),
+    mutationFn: ({ card, rating }: { card: Flashcard; rating: Rating }) =>
+      flashcardsApi.review(card, rating),
     onSuccess: () =>
       Promise.all([
         queryClient.invalidateQueries({

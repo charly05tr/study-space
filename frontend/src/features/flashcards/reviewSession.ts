@@ -1,19 +1,29 @@
-import { DEFAULT_NEW_LIMIT, RATINGS } from './types';
+import { RATINGS } from './types';
 import type { Flashcard, Rating } from './types';
+
+/** Never-reviewed cards the review queue admits per session. */
+export const DEFAULT_NEW_LIMIT = 10;
 
 /** Upper bound of the new-cards control: well under the server's queue ceiling. */
 export const MAX_NEW_LIMIT = 200;
 
 /**
- * Reads the new-cards-per-session setting from free text or storage.
- * Anything that is not a whole number from 0 up falls back to the default, and
- * large values are capped.
+ * Reads the new-cards-per-session setting from free text or storage. Only plain
+ * decimal digits count ("1e1", "0x10", "-3", "2.5" do not); large values are
+ * capped. Returns null for anything else, so the caller decides what to keep.
  */
-export const parseNewLimit = (raw: string | null | undefined): number => {
-  if (raw === null || raw === undefined || raw.trim() === '') return DEFAULT_NEW_LIMIT;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 0) return DEFAULT_NEW_LIMIT;
-  return Math.min(value, MAX_NEW_LIMIT);
+export const parseNewLimit = (raw: string | null | undefined): number | null => {
+  const text = raw?.trim() ?? '';
+  if (!/^\d+$/.test(text)) return null;
+  return Math.min(Number(text), MAX_NEW_LIMIT);
+};
+
+/** What a 409 from the review endpoint carries: the card as the server has it. */
+export const reviewConflictCard = (error: unknown): Flashcard | null => {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
+  const response = (error as { response?: { status?: number; data?: { card?: Flashcard } } })
+    .response;
+  return response?.status === 409 && response.data?.card ? response.data.card : null;
 };
 
 /**
@@ -42,6 +52,8 @@ export interface SessionState {
 export type SessionAction =
   | { type: 'reveal' }
   | { type: 'rated'; rating: Rating }
+  /** The server had already reviewed the card on screen: move on without counting a rating. */
+  | { type: 'already_reviewed'; cardId: number }
   | { type: 'refilled'; cards: Flashcard[] }
   | { type: 'refill_failed' };
 
@@ -73,6 +85,20 @@ export const sessionReducer = (state: SessionState, action: SessionAction): Sess
         queue,
         revealed: false,
         counts: { ...state.counts, [action.rating]: state.counts[action.rating] + 1 },
+        reviewed: state.reviewed + 1,
+        newReviewed: state.newReviewed + (card.state === 0 ? 1 : 0),
+        phase: queue.length > 0 ? 'reviewing' : state.refilled ? 'done' : 'refilling',
+      };
+    }
+
+    case 'already_reviewed': {
+      if (state.phase !== 'reviewing' || state.queue[0]?.id !== action.cardId) return state;
+
+      const [card, ...queue] = state.queue;
+      return {
+        ...state,
+        queue,
+        revealed: false,
         reviewed: state.reviewed + 1,
         newReviewed: state.newReviewed + (card.state === 0 ? 1 : 0),
         phase: queue.length > 0 ? 'reviewing' : state.refilled ? 'done' : 'refilling',

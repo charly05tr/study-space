@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { parseNewLimit } from '../reviewSession';
+import { DEFAULT_NEW_LIMIT, parseNewLimit } from '../reviewSession';
 
 const storageKey = (studyspaceId: number) => `studyspace:${studyspaceId}:flashcards:newLimit`;
 
@@ -23,15 +23,20 @@ const write = (studyspaceId: number, value: string) => {
  * How many never-reviewed cards a session admits, remembered per studyspace.
  *
  * `text` is what the field shows, so it can be empty while the user retypes;
- * `value` is always a usable number.
+ * `value` is always a usable number and only changes on valid input, so an
+ * empty or half-typed field does not refetch the queue.
  */
 export const useNewLimit = (studyspaceId: number) => {
-  const [text, setTextState] = useState(() => String(parseNewLimit(read(studyspaceId))));
+  const [value, setValue] = useState(() => parseNewLimit(read(studyspaceId)) ?? DEFAULT_NEW_LIMIT);
+  const [text, setTextState] = useState(() => String(value));
 
   const setText = (next: string) => {
     setTextState(next);
-    write(studyspaceId, String(parseNewLimit(next)));
+    const parsed = parseNewLimit(next);
+    if (parsed === null) return;
+    setValue(parsed);
+    write(studyspaceId, String(parsed));
   };
 
-  return { text, setText, value: parseNewLimit(text) };
+  return { text, setText, value };
 };

@@ -1,4 +1,5 @@
 import axios from '../../../config/axios';
+import { reviewConflictCard } from '../reviewSession';
 import type {
   ConversionResult,
   CreateFlashcardPayload,
@@ -8,6 +9,7 @@ import type {
   FlashcardFilters,
   FlashcardStats,
   Rating,
+  ReviewOutcome,
 } from '../types';
 
 const FLASHCARDS_URL = '/flashcards';
@@ -62,9 +64,23 @@ export const flashcardsApi = {
     return response.data;
   },
 
-  review: async (flashcardId: number, rating: Rating): Promise<Flashcard> => {
-    const response = await axios.post(`${FLASHCARDS_URL}/${flashcardId}/review/`, { rating });
-    return response.data;
+  /**
+   * Sends the `last_review` the client saw, which makes a retry safe: if the card
+   * was reviewed in the meantime the server answers 409 with the current card,
+   * returned here as `alreadyReviewed` instead of thrown.
+   */
+  review: async (card: Flashcard, rating: Rating): Promise<ReviewOutcome> => {
+    try {
+      const response = await axios.post(`${FLASHCARDS_URL}/${card.id}/review/`, {
+        rating,
+        last_review: card.last_review,
+      });
+      return { card: response.data, alreadyReviewed: false };
+    } catch (error) {
+      const current = reviewConflictCard(error);
+      if (current) return { card: current, alreadyReviewed: true };
+      throw error;
+    }
   },
 
   resetProgress: async (flashcardId: number): Promise<Flashcard> => {

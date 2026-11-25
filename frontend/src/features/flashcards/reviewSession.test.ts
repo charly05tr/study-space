@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   initSession,
+  reviewConflictCard,
   parseNewLimit,
   ratingBreakdown,
   ratingForKey,
@@ -165,12 +166,59 @@ describe('helpers', () => {
 
   it('parses the new-cards limit defensively', () => {
     expect(parseNewLimit('15')).toBe(15);
+    expect(parseNewLimit(' 7 ')).toBe(7);
     expect(parseNewLimit('0')).toBe(0);
-    expect(parseNewLimit('')).toBe(10);
-    expect(parseNewLimit(null)).toBe(10);
-    expect(parseNewLimit('-3')).toBe(10);
-    expect(parseNewLimit('2.5')).toBe(10);
-    expect(parseNewLimit('abc')).toBe(10);
     expect(parseNewLimit('9999')).toBe(200);
+    expect(parseNewLimit('99999999999999999999')).toBe(200);
+  });
+
+  it('rejects anything that is not plain digits', () => {
+    for (const bad of ['', '  ', null, undefined, '-3', '2.5', 'abc', '1e1', '0x10', '+5', '1 0']) {
+      expect(parseNewLimit(bad)).toBeNull();
+    }
+  });
+});
+
+describe('already reviewed cards (409)', () => {
+  const revealed = (cards: Flashcard[]) => run(initSession(cards), { type: 'reveal' });
+
+  it('advances without counting a rating', () => {
+    const state = sessionReducer(revealed([card(1), card(2)]), { type: 'already_reviewed', cardId: 1 });
+    expect(state.queue.map((c) => c.id)).toEqual([2]);
+    expect(state.counts).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0 });
+    expect(state.reviewed).toBe(1);
+    expect(state.revealed).toBe(false);
+    expect(state.phase).toBe('reviewing');
+  });
+
+  it('spends the new-cards budget when the card was new', () => {
+    const state = sessionReducer(revealed([card(1, 0)]), { type: 'already_reviewed', cardId: 1 });
+    expect(state.newReviewed).toBe(1);
+  });
+
+  it('refills once the queue runs out, like a normal rating', () => {
+    const state = sessionReducer(revealed([card(1)]), { type: 'already_reviewed', cardId: 1 });
+    expect(state.phase).toBe('refilling');
+  });
+
+  it('ignores a conflict for a card that is not on screen', () => {
+    const state = revealed([card(1), card(2)]);
+    expect(sessionReducer(state, { type: 'already_reviewed', cardId: 2 })).toBe(state);
+  });
+});
+
+describe('reviewConflictCard', () => {
+  const conflict = (status: number, data: unknown) => ({ response: { status, data } });
+
+  it('returns the card of a 409', () => {
+    const current = card(1);
+    expect(reviewConflictCard(conflict(409, { detail: 'x', card: current }))).toBe(current);
+  });
+
+  it('is null for other statuses, bodies and errors', () => {
+    expect(reviewConflictCard(conflict(500, { card: card(1) }))).toBeNull();
+    expect(reviewConflictCard(conflict(409, { detail: 'x' }))).toBeNull();
+    expect(reviewConflictCard(new Error('Network Error'))).toBeNull();
+    expect(reviewConflictCard(null)).toBeNull();
   });
 });

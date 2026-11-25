@@ -54,8 +54,15 @@ export const ReviewSession = ({ studyspaceId, cards, newLimit, onRestart }: Revi
     // One request at a time: a double press must not rate the card twice.
     if (!reviewing || !state.revealed || submitting) return;
     review.mutate(
-      { flashcardId: current.id, rating },
-      { onSuccess: () => dispatch({ type: 'rated', rating }) },
+      { card: current, rating },
+      {
+        onSuccess: ({ alreadyReviewed }) =>
+          dispatch(
+            alreadyReviewed
+              ? { type: 'already_reviewed', cardId: current.id }
+              : { type: 'rated', rating },
+          ),
+      },
     );
   };
 
