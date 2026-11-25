@@ -40,6 +40,8 @@ interface BlockEditorProps {
   editable?: boolean;
   /** Override persistence. Only meant for tests and stories. */
   onSave?: (content: NoteDocument) => Promise<unknown>;
+  /** Told whenever pen mode turns on or off, so the page can hide its own chrome. */
+  onDrawingChange?: (active: boolean) => void;
   className?: string;
 }
 
@@ -50,6 +52,7 @@ export const BlockEditor = ({
   initialDrawing,
   editable = true,
   onSave,
+  onDrawingChange,
   className,
 }: BlockEditorProps) => {
   const { status, scheduleSave } = useNoteAutosave(noteId, { save: onSave });
@@ -83,6 +86,12 @@ export const BlockEditor = ({
   const seedDrawing = useMemo(() => normalizeDrawing(initialDrawing), [initialDrawing]);
   const startDrawing = useCallback(() => setPenActive(true), []);
   const stopDrawing = useCallback(() => setPenActive(false), []);
+
+  // Parents should pass a stable callback (a state setter is), otherwise this
+  // re-fires on every render of the parent.
+  useEffect(() => {
+    onDrawingChange?.(penActive);
+  }, [penActive, onDrawingChange]);
 
   // Ctrl/Cmd+Shift+D toggles the pen. `code`, not `key`: Shift changes `key` to
   // "D" and other layouts move the letter. Esc and Ctrl+Z are handled by the
@@ -230,9 +239,13 @@ export const BlockEditor = ({
         {/* No formatting bar: blocks come from `/` and marks from the selection,
             so the only persistent chrome is the save state. Translucent and
             sticky so the prose scrolls under it and stays legible. */}
-        <div className="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm">
-          <SaveIndicator status={saveStatus} />
-        </div>
+        {/* Hidden while drawing: the canvas is meant to be uncluttered, and the
+            drawing still saves in the background. */}
+        {!penActive && (
+          <div className="sticky top-0 z-10 flex justify-end bg-page/85 py-2 backdrop-blur-sm">
+            <SaveIndicator status={saveStatus} />
+          </div>
+        )}
 
         <FormatBubbleMenu editor={editor} />
         {/* All three are mutually exclusive — see their `shouldShow`. */}

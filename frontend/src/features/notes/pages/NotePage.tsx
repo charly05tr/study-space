@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Divider, EmptyState, ErrorState, Skeleton, SkeletonText } from '../../../components/ui';
 import { getApiErrorMessage, getApiErrorStatus } from '../../../lib/apiError';
@@ -9,6 +10,8 @@ export const NotePage = () => {
   const { noteId } = useParams();
   const id = Number(noteId);
   const { data: note, isPending, isError, error, refetch } = useNote(id);
+  // Above the early returns: hooks cannot run conditionally.
+  const [drawing, setDrawing] = useState(false);
 
   if (isPending) {
     return (
@@ -45,12 +48,15 @@ export const NotePage = () => {
     // share a single left and right edge instead of each computing its own.
     <article className="mx-auto flex w-full max-w-measure flex-col gap-2">
       <header className="flex flex-col gap-4">
-        <Link
-          to={`/studyspace/${note.studyspace}`}
-          className="font-heading text-xs uppercase tracking-[0.14em] text-muted hover:text-ink"
-        >
-          &larr; Back to studyspace
-        </Link>
+        {/* Not shown in draw mode: leaving mid-drawing is done with Done/Esc. */}
+        {!drawing && (
+          <Link
+            to={`/studyspace/${note.studyspace}`}
+            className="font-heading text-xs uppercase tracking-[0.14em] text-muted hover:text-ink"
+          >
+            &larr; Back to studyspace
+          </Link>
+        )}
 
         <NoteTitle noteId={note.id} studyspaceId={note.studyspace} title={note.title} />
 
@@ -68,6 +74,7 @@ export const NotePage = () => {
         studyspaceId={note.studyspace}
         initialContent={note.content}
         initialDrawing={note.drawing}
+        onDrawingChange={setDrawing}
       />
     </article>
   );
