@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { flashcardsRootKey } from '../../flashcards/hooks/useFlashcards';
 import { quizzesApi } from '../api/quizzes.api';
 import type { CreateQuizPayload, Quiz, UpdateQuizPayload } from '../types';
 
@@ -63,7 +64,10 @@ export const usePublishQuiz = (quizId: number) => {
   });
 };
 
-/** Deletes a quiz from a list row; its flashcards survive on the server. */
+/**
+ * Deletes a quiz from a list row; its flashcards survive on the server but lose
+ * their origin question, so the flashcard queries are refreshed too.
+ */
 export const useDeleteQuiz = (studyspaceId: number) => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -71,7 +75,10 @@ export const useDeleteQuiz = (studyspaceId: number) => {
     onSuccess: (_result, quizId) => {
       // Removed, not invalidated: refetching a deleted quiz would only be a 404.
       queryClient.removeQueries({ queryKey: quizQueryKey(quizId) });
-      return queryClient.invalidateQueries({ queryKey: quizzesQueryKey(studyspaceId) });
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: quizzesQueryKey(studyspaceId) }),
+        queryClient.invalidateQueries({ queryKey: flashcardsRootKey }),
+      ]);
     },
   });
 };

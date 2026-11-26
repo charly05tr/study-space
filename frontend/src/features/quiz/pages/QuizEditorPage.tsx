@@ -132,7 +132,8 @@ const QuizEditor = ({ quiz }: { quiz: Quiz }) => {
       chosen.length === selectable.length ? new Set() : new Set(selectable.map((q) => q.id)),
     );
 
-  const handleConvert = () =>
+  const handleConvert = () => {
+    if (convert.isPending) return;
     convert.mutate(
       chosen.map((question) => question.id),
       {
@@ -142,6 +143,7 @@ const QuizEditor = ({ quiz }: { quiz: Quiz }) => {
         },
       },
     );
+  };
 
   return (
     <>

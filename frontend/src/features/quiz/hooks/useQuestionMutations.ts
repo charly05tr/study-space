@@ -2,11 +2,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { questionsApi } from '../api/quizzes.api';
 import type { PositionPatch } from '../questionForm';
 import type { CreateQuestionPayload, UpdateQuestionPayload } from '../types';
+import { flashcardsRootKey } from '../../flashcards/hooks/useFlashcards';
 import { quizQueryKey, quizzesRootKey } from './useQuizzes';
 
 /**
  * Question edits change the quiz detail (the ordered list) and the question
- * count shown on every quiz list, so both are refreshed.
+ * count shown on every quiz list, so both are refreshed. Flashcards too: they
+ * point at their origin question, which an edit or a delete changes.
  */
 const useRefreshQuiz = (quizId: number) => {
   const queryClient = useQueryClient();
@@ -14,6 +16,7 @@ const useRefreshQuiz = (quizId: number) => {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: quizQueryKey(quizId) }),
       queryClient.invalidateQueries({ queryKey: quizzesRootKey }),
+      queryClient.invalidateQueries({ queryKey: flashcardsRootKey }),
     ]);
 };
 

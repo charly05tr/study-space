@@ -41,7 +41,7 @@ export const ConvertQuestionsBar = ({
         <Button
           variant="secondary"
           size="sm"
-          disabled={blocked || selectedCount === 0}
+          disabled={blocked || selectedCount === 0 || converting}
           loading={converting}
           aria-describedby="convert-hint"
           onClick={onConvert}

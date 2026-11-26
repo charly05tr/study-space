@@ -250,11 +250,13 @@ const Results = ({ state, questions, onRetry, onRestartAll }: ResultsProps) => {
   const score = scoreResults(state.results);
   const missed = missedQuestions(questions, state.results);
 
-  const handleConvert = () =>
+  const handleConvert = () => {
+    if (convert.isPending) return;
     convert.mutate(
       missed.map((question) => question.id),
       { onSuccess: (result) => notify(summarizeConversion(result)) },
     );
+  };
 
   return (
     <section aria-labelledby="results-heading" className="flex flex-col gap-5">
@@ -308,7 +310,7 @@ const Results = ({ state, questions, onRetry, onRestartAll }: ResultsProps) => {
             <Button
               variant="secondary"
               loading={convert.isPending}
-              disabled={convert.isSuccess}
+              disabled={convert.isSuccess || convert.isPending}
               onClick={handleConvert}
             >
               {convert.isSuccess ? 'Converted' : 'Convert missed to flashcards'}
