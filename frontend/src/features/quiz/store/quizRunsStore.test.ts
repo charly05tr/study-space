@@ -11,7 +11,7 @@ import { useQuizRunsStore } from './quizRunsStore';
 vi.mock('../api/quizGeneration.api', () => ({ streamQuizGeneration: vi.fn() }));
 vi.mock('../../ai/readApiKey', () => ({ readApiKey: vi.fn().mockResolvedValue('KEY') }));
 vi.mock('../api/quizzes.api', () => ({
-  quizzesApi: { create: vi.fn() },
+  quizzesApi: { create: vi.fn(), listByStudyspace: vi.fn() },
   questionsApi: {},
 }));
 
@@ -55,6 +55,7 @@ beforeEach(() => {
   vi.mocked(quizzesApi.create)
     .mockReset()
     .mockResolvedValue({ id: 42, studyspace: 1 } as Quiz);
+  vi.mocked(quizzesApi.listByStudyspace).mockReset().mockResolvedValue([]);
   vi.mocked(streamQuizGeneration)
     .mockReset()
     .mockImplementation(
@@ -148,6 +149,76 @@ describe('quizRunsStore', () => {
 
     expect(quizzesApi.create).toHaveBeenCalledTimes(2);
     expect(runOf(1)).toMatchObject({ status: 'saved', quizId: 42 });
+  });
+
+  describe('retrying a save', () => {
+    const failFirstSave = async () => {
+      vi.mocked(quizzesApi.create).mockRejectedValueOnce(new Error('response lost'));
+      useQuizRunsStore.getState().start(1, request);
+      await settle();
+      calls[0].resolve(generated);
+      await settle();
+      expect(runOf(1)).toMatchObject({ saveFailed: true });
+    };
+
+    const landedDraft = (overrides: Partial<Quiz> = {}) =>
+      ({
+        id: 7,
+        studyspace: 1,
+        title: 'Paging',
+        origin: 'ai',
+        model: 'models/m',
+        question_count: 1,
+        created_at: new Date().toISOString(),
+        ...overrides,
+      }) as Quiz;
+
+    it('reuses the draft the failed attempt already created instead of posting another', async () => {
+      await failFirstSave();
+      vi.mocked(quizzesApi.listByStudyspace).mockResolvedValue([landedDraft()]);
+
+      useQuizRunsStore.getState().retrySave(1);
+      await settle();
+
+      expect(quizzesApi.create).toHaveBeenCalledTimes(1);
+      expect(runOf(1)).toMatchObject({ status: 'saved', quizId: 7, saving: false });
+    });
+
+    it('does not mistake an older or different quiz for its own draft', async () => {
+      await failFirstSave();
+      vi.mocked(quizzesApi.listByStudyspace).mockResolvedValue([
+        landedDraft({ id: 5, created_at: '2020-01-01T00:00:00Z' }),
+        landedDraft({ id: 6, title: 'Other topic' }),
+        landedDraft({ id: 8, question_count: 9 }),
+        landedDraft({ id: 9, origin: 'manual' }),
+      ]);
+
+      useQuizRunsStore.getState().retrySave(1);
+      await settle();
+
+      expect(quizzesApi.create).toHaveBeenCalledTimes(2);
+      expect(runOf(1)).toMatchObject({ status: 'saved', quizId: 42 });
+    });
+
+    it('still saves when the lookup itself fails', async () => {
+      await failFirstSave();
+      vi.mocked(quizzesApi.listByStudyspace).mockRejectedValue(new Error('offline'));
+
+      useQuizRunsStore.getState().retrySave(1);
+      await settle();
+
+      expect(quizzesApi.create).toHaveBeenCalledTimes(2);
+      expect(runOf(1)).toMatchObject({ status: 'saved', quizId: 42 });
+    });
+
+    it('does not look anything up on the first save', async () => {
+      useQuizRunsStore.getState().start(1, request);
+      await settle();
+      calls[0].resolve(generated);
+      await settle();
+
+      expect(quizzesApi.listByStudyspace).not.toHaveBeenCalled();
+    });
   });
 
   it('dismiss drops a finished entry', async () => {

@@ -37,7 +37,12 @@ export interface QuizRunEntry {
   model: string;
   request: QuizRequest;
   controller: AbortController;
+  /** When the run began (ms since epoch): a draft this run saved is not older than that. */
+  startedAt: number;
 }
+
+/** Client and server clocks are not in sync; this much slack when comparing created_at. */
+const CLOCK_SKEW_MS = 60_000;
 
 interface QuizRunsState {
   runs: Record<number, QuizRunEntry>;
@@ -65,7 +70,36 @@ export const useQuizRunsStore = create<QuizRunsState>()((set, get) => {
       return { runs };
     });
 
-  const save = async (studyspaceId: number, controller: AbortController) => {
+  /**
+   * The draft an earlier, failed-looking save of this run already created (the
+   * request landed but its response was lost), if any. Retrying must reuse it
+   * instead of posting a second copy.
+   */
+  const findSavedDraft = async (studyspaceId: number, entry: QuizRunEntry): Promise<number | null> => {
+    const { result, model, startedAt } = entry;
+    if (!result) return null;
+    try {
+      const quizzes = await quizzesApi.listByStudyspace(studyspaceId);
+      const match = quizzes.find(
+        (quiz) =>
+          quiz.origin === 'ai' &&
+          quiz.title === result.title.trim() &&
+          quiz.model === model &&
+          quiz.question_count === result.questions.length &&
+          Date.parse(quiz.created_at) >= startedAt - CLOCK_SKEW_MS,
+      );
+      return match?.id ?? null;
+    } catch {
+      // Could not tell: saving is the better risk than losing the quiz.
+      return null;
+    }
+  };
+
+  const save = async (
+    studyspaceId: number,
+    controller: AbortController,
+    { isRetry = false }: { isRetry?: boolean } = {},
+  ) => {
     // A cancelled, replaced or logged-out entry is no longer this one.
     const isCurrent = () => get().runs[studyspaceId]?.controller === controller;
     const entry = get().runs[studyspaceId];
@@ -74,6 +108,14 @@ export const useQuizRunsStore = create<QuizRunsState>()((set, get) => {
 
     patch(studyspaceId, { saving: true, saveFailed: false });
     try {
+      const existingId = isRetry ? await findSavedDraft(studyspaceId, entry) : null;
+      if (existingId !== null) {
+        if (!isCurrent()) return;
+        await queryClient.invalidateQueries({ queryKey: quizzesQueryKey(studyspaceId) });
+        if (isCurrent()) patch(studyspaceId, { status: 'saved', saving: false, quizId: existingId });
+        return;
+      }
+
       const quiz = await quizzesApi.create({
         studyspace: studyspaceId,
         title: result.title,
@@ -144,6 +186,7 @@ export const useQuizRunsStore = create<QuizRunsState>()((set, get) => {
             model: '',
             request,
             controller,
+            startedAt: Date.now(),
           },
         },
       }));
@@ -166,7 +209,7 @@ export const useQuizRunsStore = create<QuizRunsState>()((set, get) => {
     retrySave: (studyspaceId) => {
       const current = get().runs[studyspaceId];
       if (current?.status !== 'done' || !current.saveFailed || current.saving) return;
-      void save(studyspaceId, current.controller);
+      void save(studyspaceId, current.controller, { isRetry: true });
     },
 
     abortAll: () => {
