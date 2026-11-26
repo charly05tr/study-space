@@ -124,8 +124,8 @@ interface GenerateChunk {
   error?: { code?: unknown; message?: unknown };
 }
 
-
-interface StreamOptions<TPartial> {
+/** Options every streamed generation accepts; `TPartial` is what `onPartial` receives. */
+export interface StreamOptions<TPartial> {
   signal?: AbortSignal;
   /** Called after each chunk with whatever the text so far parses to. */
   onPartial?: (partial: TPartial) => void;
@@ -278,6 +278,9 @@ export const streamStructured = async <TResult, TPartial>(
   }
 };
 
+/** Low: feedback on a note should be consistent and stick to what the note says. */
+const REVIEW_TEMPERATURE = 0.3;
+
 /** Streams a writing review; see `streamStructured` for the contract. */
 export const streamReviewWriting = (
   key: string,
@@ -290,7 +293,7 @@ export const streamReviewWriting = (
     systemInstruction: REVIEW_SYSTEM_INSTRUCTION,
     prompt: buildReviewPrompt(text),
     schema: WRITING_REVIEW_SCHEMA,
-    temperature: 0.3,
+    temperature: REVIEW_TEMPERATURE,
     parse: parseWritingReview,
     declinedMessage: 'Gemini declined to review this note.',
     cutOffMessage: 'The review was cut off. Try a shorter note or selection.',

@@ -1,4 +1,5 @@
 import { streamStructured } from '../../ai/api/gemini.api';
+import type { StreamOptions } from '../../ai/api/gemini.api';
 import {
   QUIZ_SCHEMA,
   QUIZ_SYSTEM_INSTRUCTION,
@@ -7,10 +8,8 @@ import {
 } from '../prompts/quizGeneration';
 import type { GeneratedQuiz, PartialGeneratedQuiz, QuizRequest } from '../prompts/quizGeneration';
 
-interface StreamOptions {
-  signal?: AbortSignal;
-  onPartial?: (partial: PartialGeneratedQuiz) => void;
-}
+/** A little above the review's: questions should vary, but stay faithful to the source. */
+const QUIZ_TEMPERATURE = 0.4;
 
 /**
  * Asks Gemini for a quiz from the checked annotations. Called from the browser
@@ -21,7 +20,7 @@ export const streamQuizGeneration = async (
   key: string,
   model: string,
   request: QuizRequest,
-  { signal, onPartial }: StreamOptions = {},
+  { signal, onPartial }: StreamOptions<PartialGeneratedQuiz> = {},
 ): Promise<GeneratedQuiz> => {
   const prompt = buildQuizPrompt(request);
   const annotationIds = new Set(request.annotations.map((annotation) => annotation.id));
@@ -32,7 +31,7 @@ export const streamQuizGeneration = async (
     systemInstruction: QUIZ_SYSTEM_INSTRUCTION,
     prompt,
     schema: QUIZ_SCHEMA,
-    temperature: 0.4,
+    temperature: QUIZ_TEMPERATURE,
     parse: (raw) =>
       parseGeneratedQuiz(raw, {
         count: request.count,
